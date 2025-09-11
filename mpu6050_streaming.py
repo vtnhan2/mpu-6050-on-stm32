@@ -204,8 +204,8 @@ class MPU6050Streamer:
             time_array = np.array(self.timestamps) - self.timestamps[0]
             
             # Plot accelerometer
-            self.ax_accel.set_title('Accelerometer (g)')
-            self.ax_accel.set_ylabel('Acceleration (g)')
+            self.ax_accel.set_title('Accelerometer (m/s²)')
+            self.ax_accel.set_ylabel('Acceleration (m/s²)')
             if len(self.accel_x) > 0:
                 self.ax_accel.plot(time_array, self.accel_x, 'r-', label='X', linewidth=1)
                 self.ax_accel.plot(time_array, self.accel_y, 'g-', label='Y', linewidth=1)
@@ -214,8 +214,8 @@ class MPU6050Streamer:
             self.ax_accel.legend()
             
             # Plot gyroscope
-            self.ax_gyro.set_title('Gyroscope (deg/s)')
-            self.ax_gyro.set_ylabel('Angular Velocity (deg/s)')
+            self.ax_gyro.set_title('Gyroscope (rad/s)')
+            self.ax_gyro.set_ylabel('Angular Velocity (rad/s)')
             if len(self.gyro_x) > 0:
                 self.ax_gyro.plot(time_array, self.gyro_x, 'r-', label='X', linewidth=1)
                 self.ax_gyro.plot(time_array, self.gyro_y, 'g-', label='Y', linewidth=1)

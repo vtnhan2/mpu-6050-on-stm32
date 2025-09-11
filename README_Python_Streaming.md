@@ -46,7 +46,7 @@ python mpu6050_streaming.py
 ```
 ┌─────────────────┬─────────────────┐
 │ Accelerometer   │ Gyroscope       │
-│ (g)             │ (deg/s)         │
+│ (m/s²)          │ (rad/s)         │
 ├─────────────────┼─────────────────┤
 │ Temperature     │ Euler Angles    │
 │ (°C)            │ (deg)           │
@@ -73,10 +73,10 @@ python mpu6050_simple.py COM3
 ============================================================
 Timestamp: 14:30:25
 ============================================================
-📊 Accelerometer (g):
-   X:    0.123  Y:   -0.456  Z:    0.789
-🔄 Gyroscope (deg/s):
-   X:   12.340  Y:  -56.780  Z:   90.120
+📊 Accelerometer (m/s²):
+   X:    1.207  Y:   -4.475  Z:    7.744
+🔄 Gyroscope (rad/s):
+   X:    0.215  Y:   -0.991  Z:    1.573
 🌡️  Temperature:  25.67 °C
 📐 Euler Angles (deg):
    Roll:   15.23  Pitch:   -8.45  Yaw:  123.67
@@ -128,14 +128,14 @@ streamer = MPU6050Streamer(port='COM19', max_points=500)
 ## 📈 Dữ liệu hiển thị
 
 ### Accelerometer:
-- **Đơn vị**: g (gravity)
-- **Range**: ±2g, ±4g, ±8g, ±16g (tùy cấu hình MPU6050)
-- **Độ phân giải**: 16384 LSB/g (±2g)
+- **Đơn vị**: m/s² (meters per second squared)
+- **Range**: ±19.62, ±39.24, ±78.48, ±156.96 m/s² (tương ứng ±2g, ±4g, ±8g, ±16g)
+- **Độ phân giải**: 160,727 LSB/(m/s²) (±2g range)
 
 ### Gyroscope:
-- **Đơn vị**: deg/s (degrees per second)
-- **Range**: ±250, ±500, ±1000, ±2000 deg/s
-- **Độ phân giải**: 131 LSB/deg/s (±250 deg/s)
+- **Đơn vị**: rad/s (radians per second)
+- **Range**: ±4.36, ±8.73, ±17.45, ±34.91 rad/s (tương ứng ±250, ±500, ±1000, ±2000 deg/s)
+- **Độ phân giải**: 2.29 LSB/(rad/s) (±250 deg/s range)
 
 ### Temperature:
 - **Đơn vị**: °C

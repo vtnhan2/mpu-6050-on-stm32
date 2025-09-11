@@ -73,12 +73,12 @@ class SimpleMPU6050Streamer:
         
         if 'accel' in data:
             accel = data['accel']
-            print(f"📊 Accelerometer (g):")
+            print(f"📊 Accelerometer (m/s²):")
             print(f"   X: {accel['x']:8.3f}  Y: {accel['y']:8.3f}  Z: {accel['z']:8.3f}")
         
         if 'gyro' in data:
             gyro = data['gyro']
-            print(f"🔄 Gyroscope (deg/s):")
+            print(f"🔄 Gyroscope (rad/s):")
             print(f"   X: {gyro['x']:8.3f}  Y: {gyro['y']:8.3f}  Z: {gyro['z']:8.3f}")
         
         if 'temperature' in data:
