@@ -155,7 +155,7 @@ int _write(int file, char *ptr, int len)
 // MPU6050 Display functions
 void UART_DisplayAccelerometer(float ax, float ay, float az)
 {
-    UART_Printf("Accelerometer: X=%.3f, Y=%.3f, Z=%.3f m/s²\r\n", ax, ay, az);
+    UART_Printf("Accelerometer: X=%.3f, Y=%.3f, Z=%.3f m/s^2\r\n", ax, ay, az);
 }
 
 void UART_DisplayGyroscope(float gx, float gy, float gz)
