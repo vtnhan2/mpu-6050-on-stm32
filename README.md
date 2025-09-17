@@ -31,9 +31,10 @@ This project includes:
 ### Connections
 
 ```
-STM32F103C8T6    MPU6050
-PB6 (SCL)    →   SCL
-PB7 (SDA)    →   SDA
+
+STM32F103/F4xx    MPU6050 (GY-521)
+PB8 (SCL)    →   SCL
+PB9 (SDA)    →   SDA
 3.3V         →   VCC
 GND          →   GND
 
