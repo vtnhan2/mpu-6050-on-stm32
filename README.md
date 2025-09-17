@@ -28,10 +28,11 @@ This project includes:
 - **Temperature**: -40°C to +85°C
 - **Communication**: I2C (address 0x68)
 
+![MPU6050 (GY-521) Module](asset/MPU6050_Triple_Axis_Sensor_Module.png)
+
 ### Connections
 
 ```
-
 STM32F103/F4xx    MPU6050 (GY-521)
 PB8 (SCL)    →   SCL
 PB9 (SDA)    →   SDA
