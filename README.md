@@ -1,12 +1,12 @@
 # MPU6050 Sensor Reading System
 
-A comprehensive system for reading MPU6050 sensor data using STM32F103C8T6 microcontroller and Python streaming scripts with real-time visualization.
+A comprehensive system for reading GY87-MPU6050 sensor data using STM32F103C8T6 microcontroller and Python streaming scripts with real-time visualization.
 
 ## 📋 Overview
 
 This project includes:
 
-- **STM32 Firmware**: Reads MPU6050 data via I2C and transmits via UART
+- **STM32 Firmware**: Reads GY87-MPU6050 data via I2C and transmits via UART
 - **Python Scripts**: Real-time data display and analysis
 - **Visualization**: Real-time graphs and console output
 - **Mathematical Calculations**: Detailed sensor data processing and angle calculations
@@ -28,12 +28,12 @@ This project includes:
 - **Temperature**: -40°C to +85°C
 - **Communication**: I2C (address 0x68)
 
-![MPU6050 (GY-521) Module](asset/MPU6050_Triple_Axis_Sensor_Module.png)
+![MPU6050 (GY-87) Module](asset/MPU6050_Triple_Axis_Sensor_Module.png)
 
 ### Connections
 
 ```
-STM32F103/F4xx    MPU6050 (GY-521)
+STM32F103/F4xx    MPU6050 (GY-87)
 PB8 (SCL)    →   SCL
 PB9 (SDA)    →   SDA
 3.3V         →   VCC
@@ -293,132 +293,6 @@ Run simple script to test:
 python mpu6050_simple.py
 ```
 
-## 📊 Python Scripts
-
-### ✅ Working Scripts
-
-#### 1. `mpu6050_chooseOutput.py` - Configurable Output Script
-
-**Features:**
-
-- ✅ Interactive configuration menu
-- ✅ Select data types to display
-- ✅ Compact/detailed modes
-- ✅ Clear screen, emoji mode
-- ✅ Raw data display
-
-**Usage:**
-
-```bash
-python mpu6050_chooseOutput.py
-# Or specify COM port
-python mpu6050_chooseOutput.py COM3
-```
-
-**Configuration Menu:**
-
-```
-==================================================
-🔧 MPU6050 Output Configuration
-==================================================
-1. Accelerometer: ✅
-2. Gyroscope:     ✅
-3. Temperature:   ✅
-4. Angles:        ✅
-5. Raw Data:      ❌
-6. Timestamp:     ✅
-7. Separator:     ✅
-8. Clear Screen:  ❌
-9. Compact Mode:  ❌
-10. Emoji Mode:   ✅
-==================================================
-Press number to toggle, 's' to start, 'q' to quit
-```
-
-#### 2. `mpu6050_simple.py` - Simple Console Script
-
-**Features:**
-
-- ✅ Basic data display
-- ✅ Beautiful formatting with emojis
-- ✅ Reading counter
-- ✅ Easy debugging
-
-**Usage:**
-
-```bash
-python mpu6050_simple.py
-# Or specify COM port
-python mpu6050_simple.py COM3
-```
-
-**Sample Output:**
-
-```
-============================================================
-Timestamp: 14:30:25
-============================================================
-📊 Accelerometer (m/s²):
-   X:    1.207  Y:   -4.475  Z:    7.744
-🔄 Gyroscope (rad/s):
-   X:    0.215  Y:   -0.991  Z:    1.573
-🌡️  Temperature:  25.67 °C
-📐 Euler Angles (deg):
-   Roll:   15.23  Pitch:   -8.45  Yaw:  123.67
-```
-
-### ⚠️ Scripts to Check
-
-#### 3. `mpu6050_streaming.py` - Real-time Graph Script
-
-**Features:**
-
-- 📊 Real-time 4-subplot graphs
-- 📊 Accelerometer, Gyroscope, Temperature, Angles
-- 📊 Multi-threading
-- ⚠️ **May need debugging**
-
-**Usage:**
-
-```bash
-python mpu6050_streaming.py
-```
-
-**Graph Interface:**
-
-```
-┌─────────────────┬─────────────────┐
-│ Accelerometer   │ Gyroscope       │
-│ (m/s²)          │ (rad/s)         │
-├─────────────────┼─────────────────┤
-│ Temperature     │ Euler Angles    │
-│ (°C)            │ (deg)           │
-└─────────────────┴─────────────────┘
-```
-
-## 🔧 Configuration
-
-### Change COM Port
-
-```python
-# In Python file
-streamer = MPU6050Streamer(port='COM3', baudrate=115200)
-```
-
-### Change Baud Rate
-
-```python
-# If STM32 uses different baud rate
-streamer = MPU6050Streamer(port='COM19', baudrate=9600)
-```
-
-### Change Display Points
-
-```python
-# Increase/decrease points on graph
-streamer = MPU6050Streamer(port='COM19', max_points=500)
-```
-
 ## 📈 Data Display
 
 ### Accelerometer
@@ -446,64 +320,6 @@ streamer = MPU6050Streamer(port='COM19', max_points=500)
 - **Yaw**: Rotation around Z-axis
 - **Unit**: degrees
 
-## 🎯 Common Usage Modes
-
-### 1. Debug Mode
-
-- Use: `mpu6050_simple.py`
-- Raw Data: ON
-- Clear Screen: OFF
-- Compact Mode: OFF
-
-### 2. Monitoring Mode
-
-- Use: `mpu6050_chooseOutput.py`
-- Clear Screen: ON
-- Compact Mode: ON
-- Emoji Mode: OFF
-
-### 3. Accelerometer Only Mode
-
-- Accelerometer: ON
-- Gyroscope: OFF
-- Temperature: OFF
-- Angles: OFF
-
-### 4. Angle Only Mode
-
-- Accelerometer: OFF
-- Gyroscope: OFF
-- Temperature: OFF
-- Angles: ON
-
-## 🔧 Troubleshooting
-
-### "COM port not found" Error
-
-1. Check Device Manager (Windows) or `ls /dev/tty*` (Linux)
-2. Install USB-UART driver
-3. Change COM port in script
-
-### "No data received" Error
-
-1. Check wire connections
-2. Check baud rate (115200)
-3. Check if STM32 is flashed with code
-4. Try resetting STM32
-
-### Graph not updating (streaming.py)
-
-1. Check if data format is correct
-2. Try running `mpu6050_simple.py` first for debugging
-3. Check regex parsing in code
-4. Check matplotlib installation
-
-### Performance Issues
-
-1. Reduce `max_points` in script
-2. Increase `interval` in animation
-3. Close other applications
-
 ## 📁 Project Structure
 
 ```
@@ -529,57 +345,6 @@ MPU6050_Read/
 ├── README_ChooseOutput.md        # Detailed chooseOutput guide
 └── README_Python_Streaming.md    # Detailed streaming guide
 ```
-
-## 🎯 Advanced Usage
-
-### Save Data to File
-
-```python
-# Add to script
-import csv
-with open('mpu6050_data.csv', 'w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(['Time', 'AccX', 'AccY', 'AccZ', 'GyroX', 'GyroY', 'GyroZ', 'Temp', 'Roll', 'Pitch', 'Yaw'])
-    # ... write data
-```
-
-### Filter Data
-
-```python
-# Add low-pass filter
-from scipy import signal
-filtered_data = signal.savgol_filter(raw_data, window_length=5, polyorder=2)
-```
-
-### Export Graphs
-
-```python
-# Save graph
-plt.savefig('mpu6050_plot.png', dpi=300, bbox_inches='tight')
-```
-
-## 📞 Support
-
-If you encounter issues:
-
-1. Check hardware connections
-2. Run `mpu6050_simple.py` for debugging
-3. Check data format from STM32
-4. Try changing COM port and baud rate
-
-## 📝 Notes
-
-- **Shortcuts**: Press number to toggle, 's' to start, 'q' to quit
-- **Stop streaming**: Ctrl+C
-- **Configuration**: Can be changed anytime before starting
-- **Save configuration**: Scripts don't save configuration, need to reconfigure each run
-
-## 🔄 Updates
-
-- **v1.0**: Basic MPU6050 reading
-- **v1.1**: Added Python streaming scripts
-- **v1.2**: Added configurable output options
-- **v1.3**: Added real-time visualization (experimental)
 
 ---
 
