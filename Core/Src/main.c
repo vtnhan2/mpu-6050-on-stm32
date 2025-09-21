@@ -110,14 +110,7 @@ int main(void)
   
   // Initialize all sensors
   GY87_Init_All_Sensors();
-  HAL_Delay(300);
-  UART_Printf("GY87 All Sensors Initialized Successfully!\r\n");
-  UART_Printf("UART Baud Rate: %lu\r\n", huart2.Init.BaudRate);
-  UART_Printf("Data Frame Size: %d bytes\r\n", FRAME_TOTAL_SIZE);
-  UART_Printf("Starting sensor data display at 100Hz...\r\n");
-  UART_Printf("Format: Accelerometer | Gyroscope | Magnetometer | Period\r\n");
   Framework_Reset_Statistics();
-  UART_NewLine();
 
   // Get initial time
   last_time = HAL_GetTick();
@@ -154,9 +147,6 @@ int main(void)
         Framework_Print_Statistics();
       }
     }
-
-    // Small delay for stable reading
-    HAL_Delay(1);
   }
   /* USER CODE END 3 */
 }

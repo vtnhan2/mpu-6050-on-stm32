@@ -41,7 +41,7 @@ float GY87_MPU6050_Get_Gy(void);
 float GY87_MPU6050_Get_Gz(void);
 float GY87_MPU6050_Get_Temperature(void);
 
-// Magnetometer Data Access
+// Magnetometer Data Access (microTesla)
 float GY87_HMC5883L_Get_Mx(void);
 float GY87_HMC5883L_Get_My(void);
 float GY87_HMC5883L_Get_Mz(void);
@@ -63,6 +63,11 @@ void GY87_Display_Formatted_Data(float ax, float ay, float az,
                                  uint32_t period_ms);
 void GY87_Display_All_Sensors_AGM(uint32_t period_ms);
 void GY87_Display_MPU6050_Only_AGM(uint32_t period_ms);
+void GY87_Test_HMC5883L_Only(void);
+
+// Helper Functions
+void GY87_Log_Error(const char* function, const char* operation, int status);
+void GY87_Log_Info(const char* message);
 
 // Global variables for angle calculation
 extern float roll, pitch, yaw;
