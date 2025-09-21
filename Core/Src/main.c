@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -24,7 +24,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "mpu6050.h"
+#include "gy87_mpu6050.h"
+#include "framework.h"
 #include "usart.h"
 #include <stdio.h>
 /* USER CODE END Includes */
@@ -49,7 +50,15 @@
 /* USER CODE BEGIN PV */
 uint32_t last_time = 0;
 uint32_t current_time = 0;
-float dt = 0.0f;
+uint32_t dt = 0;
+
+// UART transmission timing
+uint32_t last_uart_time = 0;
+uint32_t uart_period = 0;
+
+// Framework data variables
+extern SensorData_t current_sensor_data;
+extern DataFrame_t current_data_frame;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -95,18 +104,24 @@ int main(void)
   MX_I2C1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  // Initialize MPU6050
-  MPU6050_Init();
-  HAL_Delay(100);
+  // Scan I2C devices and initialize all sensors
+  GY87_I2C_Scanner();
+  GY87_Debug_I2C_Status();
   
-  // Send welcome message
-  UART_DisplayMPU6050Data();
-  UART_SendString("MPU6050 Initialized Successfully!\r\n");
-  UART_SendString("Baud Rate: 115200\r\n");
+  // Initialize all sensors
+  GY87_Init_All_Sensors();
+  HAL_Delay(300);
+  UART_Printf("GY87 All Sensors Initialized Successfully!\r\n");
+  UART_Printf("UART Baud Rate: %lu\r\n", huart2.Init.BaudRate);
+  UART_Printf("Data Frame Size: %d bytes\r\n", FRAME_TOTAL_SIZE);
+  UART_Printf("Starting sensor data display at 100Hz...\r\n");
+  UART_Printf("Format: Accelerometer | Gyroscope | Magnetometer | Period\r\n");
+  Framework_Reset_Statistics();
   UART_NewLine();
-  
+
   // Get initial time
   last_time = HAL_GetTick();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -116,44 +131,32 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Read MPU6050 data
-    if(MPU6050_Read_Data())
+    // Read all sensor data at 100Hz (10ms period)
+    current_time = HAL_GetTick();
+    dt = current_time - last_time;
+
+    if (dt >= 10) // 100Hz sampling rate
     {
-        // Get current time and calculate delta time
-        current_time = HAL_GetTick();
-        dt = (current_time - last_time) / 1000.0f; // Convert to seconds
-        last_time = current_time;
-        
-        // Get sensor data
-        float ax = MPU6050_Get_Ax();
-        float ay = MPU6050_Get_Ay();
-        float az = MPU6050_Get_Az();
-        float gx = MPU6050_Get_Gx();
-        float gy = MPU6050_Get_Gy();
-        float gz = MPU6050_Get_Gz();
-        float temp = MPU6050_Get_Temperature();
-        
-        // Calculate angles using complementary filter
-        float roll_angle, pitch_angle, yaw_angle;
-        MPU6050_ComplementaryFilter(&roll_angle, &pitch_angle, &yaw_angle, dt);
-        
-        // Display data via UART
-        UART_DisplayMPU6050Data();
-        UART_DisplayAccelerometer(ax, ay, az);
-        UART_DisplayGyroscope(gx, gy, gz);
-        UART_DisplayTemperature(temp);
-        UART_DisplayAngles(roll_angle, pitch_angle, yaw_angle);
-        UART_NewLine();
-        UART_Printf("Delta Time: %.3f s\r\n", dt);
-        UART_SendString("========================\r\n");
+      last_time = current_time;
+
+      // Calculate UART transmission period
+      uint32_t uart_send_time = HAL_GetTick();
+      uart_period = uart_send_time - last_uart_time;
+      last_uart_time = uart_send_time;
+
+      // Display all sensor data (Accelerometer, Gyroscope, Magnetometer)
+      GY87_Display_All_Sensors_AGM(uart_period);
+
+      // Print statistics every 10 seconds
+      static uint32_t last_stats_time = 0;
+      if (current_time - last_stats_time >= 10000) {
+        last_stats_time = current_time;
+        Framework_Print_Statistics();
+      }
     }
-    else
-    {
-        UART_SendString("Error reading MPU6050 data!\r\n");
-    }
-    
-    // Delay for stable reading
-    HAL_Delay(100);
+
+    // Small delay for stable reading
+    HAL_Delay(1);
   }
   /* USER CODE END 3 */
 }

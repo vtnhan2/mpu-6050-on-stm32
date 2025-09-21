@@ -7,7 +7,7 @@ A comprehensive system for reading GY87-MPU6050 sensor data using STM32F103C8T6 
 The **GY-87 10DOF (10 Degrees of Freedom)** module is an integrated multi-sensor breakout board that combines four essential sensors:
 
 - **MPU6050**: 6-axis IMU (3-axis accelerometer + 3-axis gyroscope)
-- **QMC5883L**: 3-axis digital compass/magnetometer
+- **HMC5883L**: 3-axis digital compass/magnetometer
 - **BMP180**: Barometric pressure sensor with temperature compensation
 - **Integrated Design**: All sensors communicate via I2C on a single compact PCB
 
@@ -48,7 +48,7 @@ struct SensorData {
 | ----------------- | ----------------------- | -------------------- |
 | **Sample Rate**   | 100 Hz                  | 10 ms period         |
 | **Data Latency**  | < 5 ms                  | Real-time processing |
-| **Communication** | UART 115200 baud        | STM32 ↔ Host         |
+| **Communication** | UART 921600 baud        | STM32 ↔ Host         |
 | **I2C Speed**     | 100 kHz (Standard Mode) | Sensor communication |
 
 ## 🛠️ Hardware
@@ -61,12 +61,49 @@ struct SensorData {
 - **I2C**: PB6 (SCL), PB7 (SDA) - MPU6050 connection
 - **UART**: PA2 (TX), PA3 (RX) - PC communication
 
-### GY87-MPU6050
+### GY87-MPU6050 Module Specifications
 
-- **Accelerometer**: 3-axis, ±2g/±4g/±8g/±16g
-- **Gyroscope**: 3-axis, ±250/±500/±1000/±2000°/s
-- **Magnetometer**:
-- **Communication**: I2C (address 0x68)
+#### MPU6050 (6-Axis IMU)
+
+| Parameter               | Specification      | Details                               |
+| ----------------------- | ------------------ | ------------------------------------- |
+| **Accelerometer**       | 3-axis, 16-bit ADC | ±2g/±4g/±8g/±16g (selectable)         |
+| **Gyroscope**           | 3-axis, 16-bit ADC | ±250/±500/±1000/±2000°/s (selectable) |
+| **Temperature**         | Built-in sensor    | -40°C to +85°C                        |
+| **I2C Address**         | 7-bit addressing   | 0x68 (AD0=GND), 0x69 (AD0=VCC)        |
+| **Supply Voltage**      | Operating range    | 2.375V - 3.46V                        |
+| **Current Consumption** | Normal operation   | 3.9mA (all sensors active)            |
+
+#### HMC5883L (3-Axis Magnetometer)
+
+| Parameter               | Specification        | Details                              |
+| ----------------------- | -------------------- | ------------------------------------ |
+| **Measurement Range**   | ±0.88 to ±8.1 Gauss (configurable) | Set by gain (default ±1.3 Ga)      |
+| **Sensitivity**         | 1090 LSB/Ga @ 1.3 Ga | Used for raw-to-Gauss conversion    |
+| **Sample Rate**         | 0.75–75 Hz           | Default 15 Hz                        |
+| **I2C Address**         | 7-bit addressing     | 0x1E (fixed)                         |
+| **Supply Voltage**      | Operating range      | 2.16V - 3.6V                         |
+| **Current Consumption** | Normal operation     | 100μA (measuring), 2.5μA (idle)      |
+
+#### BMP180 (Barometric Pressure Sensor)
+
+| Parameter               | Specification       | Details                                  |
+| ----------------------- | ------------------- | ---------------------------------------- |
+| **Pressure Range**      | Measurement range   | 300 - 1100 hPa (9000m to -500m altitude) |
+| **Accuracy**            | Absolute accuracy   | ±1 hPa (±8m altitude)                    |
+| **Resolution**          | Pressure resolution | 0.01 hPa (0.08m altitude)                |
+| **Temperature Range**   | Operating range     | -40°C to +85°C                           |
+| **I2C Address**         | 7-bit addressing    | 0x77 (fixed)                             |
+| **Supply Voltage**      | Operating range     | 1.8V - 3.6V                              |
+| **Current Consumption** | Normal operation    | 5µA (1 sample/sec)                       |
+
+#### Module Integration Features
+
+- **Compact Design**: 25.4mm × 15.2mm PCB
+- **Level Shifters**: 3.3V/5V compatible I/O
+- **Pull-up Resistors**: Built-in 4.7kΩ on I2C lines
+- **Pin Headers**: 0.1" (2.54mm) spacing for breadboard compatibility
+- **Mounting Holes**: M2 screws for secure installation
 
 ![MPU6050 (GY-87) Module](asset/MPU6050_Triple_Axis_Sensor_Module.png)
 
@@ -491,23 +528,6 @@ MPU6050_Read/
 ├── README.md                     # This file
 ```
 
-## 🆕 What's New in GY87_MPU6050
-
-### Version 2.0.0 (2025)
-
-- **🔍 I2C Scanner**: Automatic device detection on I2C bus
-- **📚 Enhanced Library**: Renamed to GY87_MPU6050 with improved error handling
-- **🛠️ Better Debugging**: Detailed I2C device information
-- **📖 Comprehensive Documentation**: Updated examples and migration guide
-- **🔧 Improved Main Loop**: Streamlined initialization process
-
-### Key Improvements
-
-1. **Automatic Device Detection**: No more guessing I2C addresses
-2. **Enhanced Error Messages**: Better debugging information via UART
-3. **Modular Design**: Cleaner separation between scanner and sensor functions
-4. **Future-Proof**: Ready for additional I2C sensors (QMC5883L, BMP180)
-
 ## 🛠️ Troubleshooting
 
 ### Common Issues
@@ -582,26 +602,16 @@ Total devices found: 1
 ```
 === I2C Scanner Started ===
 Scanning I2C bus for devices...
-Device found at address: 0x0D (13)    # QMC5883L Magnetometer
+Device found at address: 0x1E (30)    # HMC5883L Magnetometer
 Device found at address: 0x68 (104)   # MPU6050
 Device found at address: 0x77 (119)   # BMP180 Pressure Sensor
 Total devices found: 3
 === I2C Scanner Completed ===
 ```
 
-## 🔮 Future Enhancements
-
-### Planned Features
-
-- **QMC5883L Magnetometer Support**: 3-axis magnetic field sensing
-- **BMP180 Pressure Sensor**: Altitude and atmospheric pressure
-- **Data Fusion**: Complete 10-DOF sensor fusion algorithm
-- **Calibration Routines**: Automatic sensor calibration
-- **Power Management**: Low-power modes and sleep functions
-
 ---
 
 **Author**: Nhan Vo  
 **Created**: 2025  
-**Version**: 2.0.0 (GY87_MPU6050 Library)  
+**Version**: (GY87_MPU6050 Library)  
 **Last Updated**: January 2025
