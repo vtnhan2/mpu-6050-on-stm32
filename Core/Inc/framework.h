@@ -1,73 +1,236 @@
-#ifndef INC_FRAMEWORK_H_
-#define INC_FRAMEWORK_H_
+/**
+ * @file       framework.h
+ * @copyright  Copyright (C) 2025 Vo Thanh Nhan. All rights reserved.
+ * @license    This project is released under the Fiot License.
+ * @version    1.0.0
+ * @date       2025-09-19
+ * @author     Nhan Vo
+ *             
+ * @brief      Data transmission framework for GY87 IMU sensor
+ *             Provides structured data protocol for UART communication
+ *             
+ * @note       This framework handles data packaging and transmission
+ * @example    framework.c
+ *             Framework implementation and usage examples
+ * @see        https://github.com/vtnhan2/mpu-6050-on-stm32
+ */
 
+/* Define to prevent recursive inclusion ------------------------------ */
+#ifndef __FRAMEWORK_H
+#define __FRAMEWORK_H
+
+/* Includes ----------------------------------------------------------- */
 #include <stdint.h>
+#include <stddef.h>
 
-// Data Frame Protocol Constants
-#define FRAME_START_BYTE    0xAA
-#define FRAME_END_BYTE      0x55
-#define FRAME_DATA_SIZE     36      // 12 + 12 + 12 bytes
-#define FRAME_TOTAL_SIZE    40      // 1 + 36 + 2 + 1 bytes
+/* Public defines ----------------------------------------------------- */
+/* Data Frame Protocol Constants */
+#define FRAME_START_BYTE     (0xAA) /*!< Frame start delimiter */
+#define FRAME_END_BYTE       (0x55) /*!< Frame end delimiter */
+#define FRAME_DATA_SIZE      (36)   /*!< Sensor data size in bytes */
+#define FRAME_TOTAL_SIZE     (40)   /*!< Total frame size in bytes */
+#define FRAME_HEADER_SIZE    (1)    /*!< Frame header size in bytes */
+#define FRAME_FOOTER_SIZE    (3)    /*!< Frame footer size in bytes */
 
-// Sensor Data Structure (36 bytes total)
-typedef struct {
-    // Accelerometer data (12 bytes) - m/s²
-    float accel_x;
-    float accel_y;
-    float accel_z;
-    
-    // Gyroscope data (12 bytes) - rad/s
-    float gyro_x;
-    float gyro_y;
-    float gyro_z;
-    
-    // Magnetometer data (12 bytes) - Tesla
-    float mag_x;
-    float mag_y;
-    float mag_z;
-} SensorData_t;
+/* Sensor Data Offsets */
+#define ACCEL_DATA_OFFSET    (0)    /*!< Accelerometer data offset */
+#define GYRO_DATA_OFFSET     (12)   /*!< Gyroscope data offset */
+#define MAG_DATA_OFFSET      (24)   /*!< Magnetometer data offset */
 
-// Complete Data Frame Structure (40 bytes total)
-typedef struct {
-    uint8_t start_byte;         // 1 byte - 0xAA
-    SensorData_t sensor_data;   // 36 bytes
-    uint16_t checksum;          // 2 bytes
-    uint8_t end_byte;           // 1 byte - 0x55
-} DataFrame_t;
+/* Public enumerate/structure ----------------------------------------- */
+/**
+ * @brief Sensor data structure for transmission
+ */
+typedef struct 
+{
+  float accel_x;  /**< Accelerometer X-axis data in m/s² */
+  float accel_y;  /**< Accelerometer Y-axis data in m/s² */
+  float accel_z;  /**< Accelerometer Z-axis data in m/s² */
+  float gyro_x;   /**< Gyroscope X-axis data in rad/s */
+  float gyro_y;   /**< Gyroscope Y-axis data in rad/s */
+  float gyro_z;   /**< Gyroscope Z-axis data in rad/s */
+  float mag_x;    /**< Magnetometer X-axis data in microTesla */
+  float mag_y;    /**< Magnetometer Y-axis data in microTesla */
+  float mag_z;    /**< Magnetometer Z-axis data in microTesla */
+}
+sensor_frame_t;
 
-// Communication Framework Functions
-uint16_t Framework_Calculate_Checksum(const SensorData_t* data);
-uint8_t Framework_Create_DataFrame(DataFrame_t* frame, const SensorData_t* sensor_data);
-uint8_t Framework_Validate_DataFrame(const DataFrame_t* frame);
-void Framework_Send_DataFrame_UART(const DataFrame_t* frame);
-void Framework_Send_DataFrame_Binary(const DataFrame_t* frame);
-void Framework_Print_SensorData_UART(const SensorData_t* data);
-void Framework_Print_DataFrame_Info(const DataFrame_t* frame);
+/**
+ * @brief Frame transmission status enumeration
+ */
+typedef enum 
+{
+  FRAME_STATUS_OK,      /**< Frame transmission successful */
+  FRAME_STATUS_ERROR,   /**< Frame transmission failed */
+  FRAME_STATUS_TIMEOUT  /**< Frame transmission timeout */
+}
+frame_status_t;
 
-// Data Conversion Utilities
-void Framework_Float_To_Bytes(float value, uint8_t* bytes);
-float Framework_Bytes_To_Float(const uint8_t* bytes);
-void Framework_SensorData_To_Bytes(const SensorData_t* data, uint8_t* bytes);
-void Framework_Bytes_To_SensorData(const uint8_t* bytes, SensorData_t* data);
+/* Public macros ------------------------------------------------------ */
+/**
+ * @brief  Calculate frame checksum
+ *
+ * @param[in]     data      Data buffer
+ * @param[in]     length    Data length
+ *
+ * @return  Calculated checksum
+ */
+#define FRAME_CALCULATE_CHECKSUM(data, length)  \
+  ({ \
+    uint8_t checksum = 0; \
+    for (int i = 0; i < (length); i++) { \
+      checksum ^= (data)[i]; \
+    } \
+    checksum; \
+  })
 
-// Frame Statistics and Monitoring
-typedef struct {
-    uint32_t frames_sent;
-    uint32_t frames_received;
-    uint32_t checksum_errors;
-    uint32_t format_errors;
-    uint32_t last_frame_time;
-    float current_frame_rate;
-} FrameStatistics_t;
+/**
+ * @brief  Pack float data into byte array
+ *
+ * @param[in]     value     Float value to pack
+ * @param[out]    buffer    Output byte buffer
+ * @param[in]     offset    Buffer offset
+ *
+ * @attention  This macro assumes little-endian byte order
+ */
+#define PACK_FLOAT(value, buffer, offset) \
+  do { \
+    union { float f; uint8_t b[4]; } u; \
+    u.f = (value); \
+    (buffer)[(offset)] = u.b[0]; \
+    (buffer)[(offset) + 1] = u.b[1]; \
+    (buffer)[(offset) + 2] = u.b[2]; \
+    (buffer)[(offset) + 3] = u.b[3]; \
+  } while (0)
 
-extern FrameStatistics_t frame_stats;
+/**
+ * @brief  Unpack byte array into float data
+ *
+ * @param[in]     buffer    Input byte buffer
+ * @param[in]     offset    Buffer offset
+ *
+ * @return  Unpacked float value
+ *
+ * @attention  This macro assumes little-endian byte order
+ */
+#define UNPACK_FLOAT(buffer, offset) \
+  ({ \
+    union { float f; uint8_t b[4]; } u; \
+    u.b[0] = (buffer)[(offset)]; \
+    u.b[1] = (buffer)[(offset) + 1]; \
+    u.b[2] = (buffer)[(offset) + 2]; \
+    u.b[3] = (buffer)[(offset) + 3]; \
+    u.f; \
+  })
 
-void Framework_Reset_Statistics(void);
-void Framework_Update_Statistics(uint8_t frame_valid);
-void Framework_Print_Statistics(void);
+/* Public function prototypes ----------------------------------------- */
+/**
+ * @brief  Initialize data transmission framework
+ *
+ * @attention  Call this function before using any framework functions
+ *
+ * @return  
+ *  - 0: Success
+ *  - 1: Error
+ */
+void framework_init(void);
 
-// Global data storage for framework
-extern SensorData_t current_sensor_data;
-extern DataFrame_t current_data_frame;
+/**
+ * @brief  Pack sensor data into transmission frame
+ *
+ * @param[in]     sensor_data  Sensor data structure
+ * @param[out]    frame_buffer Output frame buffer
+ * @param[in]     buffer_size  Frame buffer size
+ *
+ * @attention  Frame buffer must be at least FRAME_TOTAL_SIZE bytes
+ *
+ * @return  
+ *  - 0: Success
+ *  - 1: Error
+ */
+uint8_t framework_pack_sensor_data(const sensor_frame_t *sensor_data, 
+                                   uint8_t *frame_buffer, 
+                                   size_t buffer_size);
 
-#endif /* INC_FRAMEWORK_H_ */
+/**
+ * @brief  Unpack sensor data from transmission frame
+ *
+ * @param[in]     frame_buffer Input frame buffer
+ * @param[in]     buffer_size  Frame buffer size
+ * @param[out]    sensor_data  Output sensor data structure
+ *
+ * @attention  Frame buffer must contain valid frame data
+ *
+ * @return  
+ *  - 0: Success
+ *  - 1: Error
+ */
+uint8_t framework_unpack_sensor_data(const uint8_t *frame_buffer, 
+                                     size_t buffer_size, 
+                                     sensor_frame_t *sensor_data);
+
+/**
+ * @brief  Transmit sensor data frame via UART
+ *
+ * @param[in]     sensor_data  Sensor data structure
+ *
+ * @attention  This function blocks until transmission is complete
+ *
+ * @return  
+ *  - 0: Success
+ *  - 1: Error
+ */
+uint8_t framework_transmit_sensor_data(const sensor_frame_t *sensor_data);
+
+/**
+ * @brief  Receive sensor data frame via UART
+ *
+ * @param[out]    sensor_data  Output sensor data structure
+ * @param[in]     timeout_ms   Reception timeout in milliseconds
+ *
+ * @attention  This function blocks until frame is received or timeout
+ *
+ * @return  
+ *  - 0: Success
+ *  - 1: Error
+ *  - 2: Timeout
+ */
+uint8_t framework_receive_sensor_data(sensor_frame_t *sensor_data, uint32_t timeout_ms);
+
+/**
+ * @brief  Validate received frame
+ *
+ * @param[in]     frame_buffer Input frame buffer
+ * @param[in]     buffer_size  Frame buffer size
+ *
+ * @attention  This function checks frame structure and checksum
+ *
+ * @return  
+ *  - 0: Valid frame
+ *  - 1: Invalid frame
+ */
+uint8_t framework_validate_frame(const uint8_t *frame_buffer, size_t buffer_size);
+
+/**
+ * @brief  Get framework statistics
+ *
+ * @param[out]    frames_sent     Number of frames sent
+ * @param[out]    frames_received Number of frames received
+ * @param[out]    errors_count    Number of transmission errors
+ *
+ * @attention  Statistics are reset when framework is initialized
+ */
+void framework_get_statistics(uint32_t *frames_sent, 
+                              uint32_t *frames_received, 
+                              uint32_t *errors_count);
+
+/**
+ * @brief  Reset framework statistics
+ *
+ * @attention  This function resets all framework counters
+ */
+void framework_reset_statistics(void);
+
+#endif // __FRAMEWORK_H
+
+/* End of file -------------------------------------------------------- */

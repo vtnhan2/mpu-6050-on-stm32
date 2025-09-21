@@ -6,7 +6,7 @@
  ******************************************************************************
  * @attention
  *
- * Copyright (c) 2025 STMicroelectronics.
+ * Copyright (c) 2025 Vo Thanh Nhan. All rights reserved.
  * All rights reserved.
  *
  * This software is licensed under terms that can be found in the LICENSE file
@@ -26,8 +26,8 @@
 /* USER CODE BEGIN Includes */
 #include "gy87_mpu6050.h"
 #include "framework.h"
-#include "usart.h"
 #include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,7 +37,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -48,23 +47,20 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint32_t last_time = 0;
-uint32_t current_time = 0;
-uint32_t dt = 0;
+// Global variables for sensor data
+float accel_x, accel_y, accel_z;
+float gyro_x, gyro_y, gyro_z;
+float mag_x, mag_y, mag_z;
 
-// UART transmission timing
-uint32_t last_uart_time = 0;
-uint32_t uart_period = 0;
-
-// Framework data variables
-extern SensorData_t current_sensor_data;
-extern DataFrame_t current_data_frame;
+// Timing variables for precise 10ms control
+uint32_t last_display_time = 0;
+uint32_t target_interval = 10; // 10ms target interval
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+// gy87_display_all_sensors_agm is declared in gy87_mpu6050.h
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -104,16 +100,19 @@ int main(void)
   MX_I2C1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  // Scan I2C devices and initialize all sensors
-  GY87_I2C_Scanner();
-  GY87_Debug_I2C_Status();
   
-  // Initialize all sensors
-  GY87_Init_All_Sensors();
-  Framework_Reset_Statistics();
-
-  // Get initial time
-  last_time = HAL_GetTick();
+  // Initialize GY87 sensors
+  gy87_init_all_sensors();
+  
+  // Initialize framework
+  framework_init();
+  
+  // Display initialization message
+  UART_SendString("GY87 IMU System Initialized\r\n");
+  UART_SendString("UART Baud Rate: 921600\r\n");
+  UART_SendString("Data Frame Size: 40 bytes\r\n");
+  UART_SendString("Starting sensor data display at 100Hz...\r\n");
+  UART_SendString("Format: Accelerometer | Gyroscope | Magnetometer | Period\r\n\r\n");
 
   /* USER CODE END 2 */
 
@@ -124,29 +123,33 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Read all sensor data at 100Hz (10ms period)
-    current_time = HAL_GetTick();
-    dt = current_time - last_time;
-
-    if (dt >= 10) // 100Hz sampling rate
+    
+    // Get current system tick
+    uint32_t current_time = HAL_GetTick();
+    
+    // Check if 10ms has elapsed since last display
+    if ((current_time - last_display_time) >= target_interval)
     {
-      last_time = current_time;
-
-      // Calculate UART transmission period
-      uint32_t uart_send_time = HAL_GetTick();
-      uart_period = uart_send_time - last_uart_time;
-      last_uart_time = uart_send_time;
-
-      // Display all sensor data (Accelerometer, Gyroscope, Magnetometer)
-      GY87_Display_All_Sensors_AGM(uart_period);
-
-      // Print statistics every 10 seconds
-      static uint32_t last_stats_time = 0;
-      if (current_time - last_stats_time >= 10000) {
-        last_stats_time = current_time;
-        Framework_Print_Statistics();
+      // Calculate actual period for display
+      uint32_t actual_period = current_time - last_display_time;
+      
+      // Read all sensor data
+      if (gy87_read_all_sensors(&accel_x, &accel_y, &accel_z, 
+                                &gyro_x, &gyro_y, &gyro_z, 
+                                &mag_x, &mag_y, &mag_z))
+      {
+        // Display sensor data with precise timing
+        gy87_display_all_sensors_agm(actual_period);
       }
+      
+      // Update last display time
+      last_display_time = current_time;
     }
+    
+    // Small delay to prevent CPU from running at 100%
+    // This ensures precise timing without blocking
+    __NOP(); // No operation - minimal CPU usage
+    
   }
   /* USER CODE END 3 */
 }
@@ -191,7 +194,10 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+// SysTick_Handler is defined in stm32f1xx_it.c
+// We'll use HAL_GetTick() for timing instead
 
+// gy87_display_all_sensors_agm is defined in gy87_mpu6050.c
 /* USER CODE END 4 */
 
 /**

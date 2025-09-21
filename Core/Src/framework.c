@@ -1,264 +1,381 @@
+/**
+ * @file       framework.c
+ * @copyright  Copyright (C) 2025 Vo Thanh Nhan. All rights reserved.
+ * @license    This project is released under the Fiot License.
+ * @version    1.0.0
+ * @date       2025-09-19
+ * @author     Nhan Vo
+ *             
+ * @brief      Data transmission framework implementation for GY87 IMU sensor
+ *             Provides structured data protocol for UART communication
+ *             
+ * @note       This framework handles data packaging and transmission
+ * @example    main.c
+ *             Framework usage in main application
+ * @see        https://github.com/vtnhan2/mpu-6050-on-stm32
+ */
+
+/* Includes ----------------------------------------------------------- */
 #include "framework.h"
 #include "usart.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-// Global data storage
-SensorData_t current_sensor_data = {0};
-DataFrame_t current_data_frame = {0};
-FrameStatistics_t frame_stats = {0};
+/* Private defines ---------------------------------------------------- */
+#define FRAMEWORK_MAX_RETRIES    (3)     /*!< Maximum transmission retries */
+#define FRAMEWORK_RETRY_DELAY_MS (10)    /*!< Retry delay in milliseconds */
 
-// Data Frame Processing Functions
-uint16_t Framework_Calculate_Checksum(const SensorData_t* data)
+/* Private enumerate/structure ---------------------------------------- */
+/**
+ * @brief Framework internal state enumeration
+ */
+typedef enum 
 {
-    if (data == NULL) return 0;
-    
-    uint16_t checksum = 0;
-    const uint8_t* bytes = (const uint8_t*)data;
-    
-    for (int i = 0; i < sizeof(SensorData_t); i++) {
-        checksum += bytes[i];
-    }
-    
-    return checksum;
+  FRAMEWORK_STATE_IDLE,      /**< Framework idle state */
+  FRAMEWORK_STATE_TX,        /**< Framework transmission state */
+  FRAMEWORK_STATE_RX,        /**< Framework reception state */
+  FRAMEWORK_STATE_ERROR      /**< Framework error state */
+}
+framework_state_t;
+
+/* Private macros ----------------------------------------------------- */
+/**
+ * @brief  Check if frame buffer is valid
+ *
+ * @param[in]     buffer      Frame buffer to check
+ * @param[in]     size        Buffer size
+ *
+ * @return  
+ *  - 0: Invalid buffer
+ *  - 1: Valid buffer
+ */
+#define FRAMEWORK_VALIDATE_BUFFER(buffer, size)  \
+  ((buffer) != NULL && (size) >= FRAME_TOTAL_SIZE)
+
+/**
+ * @brief  Calculate simple checksum for data integrity
+ *
+ * @param[in]     data        Data buffer
+ * @param[in]     length      Data length
+ *
+ * @return  Calculated checksum
+ */
+#define FRAMEWORK_SIMPLE_CHECKSUM(data, length)  \
+  FRAME_CALCULATE_CHECKSUM(data, length)
+
+/* Private variables -------------------------------------------------- */
+static framework_state_t s_framework_state = FRAMEWORK_STATE_IDLE;
+static uint32_t s_frames_sent = 0;
+static uint32_t s_frames_received = 0;
+static uint32_t s_errors_count = 0;
+static uint8_t s_frame_buffer[FRAME_TOTAL_SIZE];
+
+/* Private function prototypes ---------------------------------------- */
+/**
+ * @brief  Send frame buffer via UART
+ *
+ * @param[in]     buffer      Frame buffer to send
+ * @param[in]     size        Buffer size
+ *
+ * @return  
+ *  - 0: Success
+ *  - 1: Error
+ */
+static uint8_t framework_send_frame(const uint8_t *buffer, size_t size);
+
+/**
+ * @brief  Receive frame buffer via UART
+ *
+ * @param[out]    buffer      Frame buffer to receive
+ * @param[in]     size        Buffer size
+ * @param[in]     timeout_ms  Reception timeout
+ *
+ * @return  
+ *  - 0: Success
+ *  - 1: Error
+ *  - 2: Timeout
+ */
+static uint8_t framework_receive_frame(uint8_t *buffer, size_t size, uint32_t timeout_ms);
+
+// Removed unused function framework_find_start_byte
+
+/* Function definitions ----------------------------------------------- */
+void framework_init(void)
+{
+  s_framework_state = FRAMEWORK_STATE_IDLE;
+  s_frames_sent = 0;
+  s_frames_received = 0;
+  s_errors_count = 0;
+  
+  // Clear frame buffer
+  memset(s_frame_buffer, 0, sizeof(s_frame_buffer));
 }
 
-uint8_t Framework_Create_DataFrame(DataFrame_t* frame, const SensorData_t* sensor_data)
+uint8_t framework_pack_sensor_data(const sensor_frame_t *sensor_data, 
+                                   uint8_t *frame_buffer, 
+                                   size_t buffer_size)
 {
-    if (frame == NULL || sensor_data == NULL) return 0;
-    
-    // Set frame structure
-    frame->start_byte = FRAME_START_BYTE;
-    memcpy(&frame->sensor_data, sensor_data, sizeof(SensorData_t));
-    frame->checksum = Framework_Calculate_Checksum(sensor_data);
-    frame->end_byte = FRAME_END_BYTE;
-    
+  if (!FRAMEWORK_VALIDATE_BUFFER(frame_buffer, buffer_size) || sensor_data == NULL)
+  {
     return 1;
 }
 
-uint8_t Framework_Validate_DataFrame(const DataFrame_t* frame)
+  // Clear frame buffer
+  memset(frame_buffer, 0, buffer_size);
+  
+  // Frame structure: [START][DATA][CHECKSUM][END]
+  uint8_t offset = 0;
+  
+  // Start byte
+  frame_buffer[offset++] = FRAME_START_BYTE;
+  
+  // Pack accelerometer data
+  PACK_FLOAT(sensor_data->accel_x, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->accel_y, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->accel_z, frame_buffer, offset);
+  offset += 4;
+  
+  // Pack gyroscope data
+  PACK_FLOAT(sensor_data->gyro_x, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->gyro_y, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->gyro_z, frame_buffer, offset);
+  offset += 4;
+  
+  // Pack magnetometer data
+  PACK_FLOAT(sensor_data->mag_x, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->mag_y, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->mag_z, frame_buffer, offset);
+  offset += 4;
+  
+  // Calculate and add checksum
+  uint8_t checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer + 1, FRAME_DATA_SIZE);
+  frame_buffer[offset++] = checksum;
+  
+  // End byte
+  frame_buffer[offset++] = FRAME_END_BYTE;
+  
+  return 0;
+}
+
+uint8_t framework_unpack_sensor_data(const uint8_t *frame_buffer, 
+                                     size_t buffer_size, 
+                                     sensor_frame_t *sensor_data)
 {
-    if (frame == NULL) return 0;
-    
-    // Check start and end bytes
-    if (frame->start_byte != FRAME_START_BYTE) return 0;
-    if (frame->end_byte != FRAME_END_BYTE) return 0;
-    
-    // Validate checksum
-    uint16_t calculated_checksum = Framework_Calculate_Checksum(&frame->sensor_data);
-    if (frame->checksum != calculated_checksum) return 0;
-    
+  if (!FRAMEWORK_VALIDATE_BUFFER(frame_buffer, buffer_size) || sensor_data == NULL)
+  {
     return 1;
 }
 
-void Framework_Send_DataFrame_UART(const DataFrame_t* frame)
-{
-    if (frame == NULL) return;
-    
-    // Send the entire frame as binary data
-    HAL_UART_Transmit(&huart2, (uint8_t*)frame, sizeof(DataFrame_t), 1000);
-    
-    // Update statistics
-    frame_stats.frames_sent++;
-    frame_stats.last_frame_time = HAL_GetTick();
+  // Validate frame structure
+  if (framework_validate_frame(frame_buffer, buffer_size))
+  {
+    return 1;
 }
 
-void Framework_Send_DataFrame_Binary(const DataFrame_t* frame)
-{
-    if (frame == NULL) return;
-    
-    // Alternative binary transmission method
-    // Can be customized for different communication protocols
-    Framework_Send_DataFrame_UART(frame);
+  uint8_t offset = 1;  // Skip start byte
+  
+  // Unpack accelerometer data
+  sensor_data->accel_x = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  sensor_data->accel_y = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  sensor_data->accel_z = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  
+  // Unpack gyroscope data
+  sensor_data->gyro_x = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  sensor_data->gyro_y = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  sensor_data->gyro_z = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  
+  // Unpack magnetometer data
+  sensor_data->mag_x = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  sensor_data->mag_y = UNPACK_FLOAT(frame_buffer, offset);
+  offset += 4;
+  sensor_data->mag_z = UNPACK_FLOAT(frame_buffer, offset);
+  
+  return 0;
 }
 
-void Framework_Print_SensorData_UART(const SensorData_t* data)
+uint8_t framework_transmit_sensor_data(const sensor_frame_t *sensor_data)
 {
-    if (data == NULL) return;
-    
-    char buffer[256];
-    
-    snprintf(buffer, sizeof(buffer), 
-        "Accel: X=%.3f Y=%.3f Z=%.3f m/s²\r\n"
-        "Gyro:  X=%.3f Y=%.3f Z=%.3f rad/s\r\n"
-        "Mag:   X=%.6f Y=%.6f Z=%.6f Tesla\r\n\r\n",
-        data->accel_x, data->accel_y, data->accel_z,
-        data->gyro_x, data->gyro_y, data->gyro_z,
-        data->mag_x, data->mag_y, data->mag_z
-    );
-    
-    UART_SendString(buffer);
+  if (sensor_data == NULL)
+  {
+    s_errors_count++;
+    return 1;
+  }
+  
+  s_framework_state = FRAMEWORK_STATE_TX;
+  
+  // Pack sensor data into frame
+  if (framework_pack_sensor_data(sensor_data, s_frame_buffer, sizeof(s_frame_buffer)))
+  {
+    s_framework_state = FRAMEWORK_STATE_ERROR;
+    s_errors_count++;
+    return 1;
+  }
+  
+  // Send frame via UART
+  if (framework_send_frame(s_frame_buffer, FRAME_TOTAL_SIZE))
+  {
+    s_framework_state = FRAMEWORK_STATE_ERROR;
+    s_errors_count++;
+    return 1;
+  }
+  
+  s_frames_sent++;
+  s_framework_state = FRAMEWORK_STATE_IDLE;
+  
+  return 0;
 }
 
-void Framework_Print_DataFrame_Info(const DataFrame_t* frame)
+uint8_t framework_receive_sensor_data(sensor_frame_t *sensor_data, uint32_t timeout_ms)
 {
-    if (frame == NULL) return;
-    
-    char buffer[128];
-    
-    snprintf(buffer, sizeof(buffer),
-        "DataFrame Info:\r\n"
-        "  Start: 0x%02X\r\n"
-        "  Checksum: 0x%04X\r\n"
-        "  End: 0x%02X\r\n"
-        "  Size: %d bytes\r\n"
-        "  Valid: %s\r\n\r\n",
-        frame->start_byte,
-        frame->checksum,
-        frame->end_byte,
-        (int)sizeof(DataFrame_t),
-        Framework_Validate_DataFrame(frame) ? "YES" : "NO"
-    );
-    
-    UART_SendString(buffer);
+  if (sensor_data == NULL)
+  {
+    s_errors_count++;
+    return 1;
+  }
+  
+  s_framework_state = FRAMEWORK_STATE_RX;
+  
+  // Receive frame via UART
+  if (framework_receive_frame(s_frame_buffer, FRAME_TOTAL_SIZE, timeout_ms))
+  {
+    s_framework_state = FRAMEWORK_STATE_ERROR;
+    s_errors_count++;
+    return 1;
+  }
+  
+  // Unpack sensor data from frame
+  if (framework_unpack_sensor_data(s_frame_buffer, FRAME_TOTAL_SIZE, sensor_data))
+  {
+    s_framework_state = FRAMEWORK_STATE_ERROR;
+    s_errors_count++;
+    return 1;
+  }
+  
+  s_frames_received++;
+  s_framework_state = FRAMEWORK_STATE_IDLE;
+  
+  return 0;
 }
 
-// Data Conversion Utilities
-void Framework_Float_To_Bytes(float value, uint8_t* bytes)
+uint8_t framework_validate_frame(const uint8_t *frame_buffer, size_t buffer_size)
 {
-    if (bytes == NULL) return;
-    
-    union {
-        float f;
-        uint8_t b[4];
-    } converter;
-    
-    converter.f = value;
-    memcpy(bytes, converter.b, 4);
+  if (!FRAMEWORK_VALIDATE_BUFFER(frame_buffer, buffer_size))
+  {
+    return 1;
+  }
+  
+  // Check start byte
+  if (frame_buffer[0] != FRAME_START_BYTE)
+  {
+    return 1;
+  }
+  
+  // Check end byte
+  if (frame_buffer[FRAME_TOTAL_SIZE - 1] != FRAME_END_BYTE)
+  {
+    return 1;
+  }
+  
+  // Check checksum
+  uint8_t calculated_checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer + 1, FRAME_DATA_SIZE);
+  uint8_t received_checksum = frame_buffer[FRAME_TOTAL_SIZE - 2];
+  
+  if (calculated_checksum != received_checksum)
+  {
+    return 1;
+  }
+  
+  return 0;
 }
 
-float Framework_Bytes_To_Float(const uint8_t* bytes)
+void framework_get_statistics(uint32_t *frames_sent, 
+                              uint32_t *frames_received, 
+                              uint32_t *errors_count)
 {
-    if (bytes == NULL) return 0.0f;
-    
-    union {
-        float f;
-        uint8_t b[4];
-    } converter;
-    
-    memcpy(converter.b, bytes, 4);
-    return converter.f;
+  if (frames_sent != NULL)
+  {
+    *frames_sent = s_frames_sent;
+  }
+  
+  if (frames_received != NULL)
+  {
+    *frames_received = s_frames_received;
+  }
+  
+  if (errors_count != NULL)
+  {
+    *errors_count = s_errors_count;
+  }
 }
 
-void Framework_SensorData_To_Bytes(const SensorData_t* data, uint8_t* bytes)
+void framework_reset_statistics(void)
 {
-    if (data == NULL || bytes == NULL) return;
-    
-    int offset = 0;
-    
-    // Accelerometer data (12 bytes)
-    Framework_Float_To_Bytes(data->accel_x, &bytes[offset]); offset += 4;
-    Framework_Float_To_Bytes(data->accel_y, &bytes[offset]); offset += 4;
-    Framework_Float_To_Bytes(data->accel_z, &bytes[offset]); offset += 4;
-    
-    // Gyroscope data (12 bytes)
-    Framework_Float_To_Bytes(data->gyro_x, &bytes[offset]); offset += 4;
-    Framework_Float_To_Bytes(data->gyro_y, &bytes[offset]); offset += 4;
-    Framework_Float_To_Bytes(data->gyro_z, &bytes[offset]); offset += 4;
-    
-    // Magnetometer data (12 bytes)
-    Framework_Float_To_Bytes(data->mag_x, &bytes[offset]); offset += 4;
-    Framework_Float_To_Bytes(data->mag_y, &bytes[offset]); offset += 4;
-    Framework_Float_To_Bytes(data->mag_z, &bytes[offset]); offset += 4;
+  s_frames_sent = 0;
+  s_frames_received = 0;
+  s_errors_count = 0;
 }
 
-void Framework_Bytes_To_SensorData(const uint8_t* bytes, SensorData_t* data)
+/* Private definitions ----------------------------------------------- */
+static uint8_t framework_send_frame(const uint8_t *buffer, size_t size)
 {
-    if (bytes == NULL || data == NULL) return;
-    
-    int offset = 0;
-    
-    // Accelerometer data (12 bytes)
-    data->accel_x = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    data->accel_y = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    data->accel_z = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    
-    // Gyroscope data (12 bytes)
-    data->gyro_x = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    data->gyro_y = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    data->gyro_z = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    
-    // Magnetometer data (12 bytes)
-    data->mag_x = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    data->mag_y = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-    data->mag_z = Framework_Bytes_To_Float(&bytes[offset]); offset += 4;
-}
-
-// Frame Statistics and Monitoring
-void Framework_Reset_Statistics(void)
-{
-    memset(&frame_stats, 0, sizeof(FrameStatistics_t));
-}
-
-void Framework_Update_Statistics(uint8_t frame_valid)
-{
-    static uint32_t last_update_time = 0;
-    static uint32_t frames_in_period = 0;
-    
-    uint32_t current_time = HAL_GetTick();
-    
-    if (frame_valid) {
-        frame_stats.frames_received++;
-    } else {
-        frame_stats.checksum_errors++;
-    }
-    
-    frames_in_period++;
-    
-    // Calculate frame rate every second
-    if (current_time - last_update_time >= 1000) {
-        frame_stats.current_frame_rate = (float)frames_in_period * 1000.0f / (current_time - last_update_time);
-        frames_in_period = 0;
-        last_update_time = current_time;
-    }
-}
-
-void Framework_Print_Statistics(void)
-{
-    char buffer[256];
-    
-    snprintf(buffer, sizeof(buffer),
-        "=== Frame Statistics ===\r\n"
-        "Frames Sent: %lu\r\n"
-        "Frames Received: %lu\r\n"
-        "Checksum Errors: %lu\r\n"
-        "Format Errors: %lu\r\n"
-        "Current Frame Rate: %.1f Hz\r\n"
-        "Last Frame Time: %lu ms\r\n"
-        "========================\r\n\r\n",
-        frame_stats.frames_sent,
-        frame_stats.frames_received,
-        frame_stats.checksum_errors,
-        frame_stats.format_errors,
-        frame_stats.current_frame_rate,
-        frame_stats.last_frame_time
-    );
-    
-    UART_SendString(buffer);
-}
-
-// High-level framework functions
-uint8_t Framework_Process_And_Send(const SensorData_t* sensor_data)
-{
-    if (sensor_data == NULL) return 0;
-    
-    // Create frame
-    if (!Framework_Create_DataFrame(&current_data_frame, sensor_data)) {
+  if (buffer == NULL || size == 0)
+  {
+    return 1;
+  }
+  
+  // Send frame via UART
+  for (size_t i = 0; i < size; i++)
+  {
+    UART_SendChar(buffer[i]);
+  }
+  
         return 0;
     }
     
-    // Validate frame
-    if (!Framework_Validate_DataFrame(&current_data_frame)) {
-        frame_stats.format_errors++;
-        return 0;
-    }
-    
-    // Send frame
-    Framework_Send_DataFrame_UART(&current_data_frame);
-    
-    // Update statistics
-    Framework_Update_Statistics(1);
-    
+static uint8_t framework_receive_frame(uint8_t *buffer, size_t size, uint32_t timeout_ms)
+{
+  if (buffer == NULL || size == 0)
+  {
     return 1;
 }
+
+  uint32_t start_time = HAL_GetTick();
+  size_t received_bytes = 0;
+  
+  // Receive frame with timeout
+  while (received_bytes < size)
+  {
+    if ((HAL_GetTick() - start_time) > timeout_ms)
+    {
+      return 2;  // Timeout
+    }
+    
+    // Check if data is available (this would need UART implementation)
+    // For now, simulate reception
+    if (received_bytes < size)
+    {
+      buffer[received_bytes] = 0;  // Placeholder
+      received_bytes++;
+    }
+  }
+  
+  return 0;
+}
+
+// Removed unused function implementation
+
+/* End of file -------------------------------------------------------- */
