@@ -1,261 +1,494 @@
-# GY87_MPU6050 Library Usage Guide
+**Version**: 2.0.2
+**Author**: Nhan Vo
+**Update**: 2025-09-19
+
+# GY87 Library Usage Guide
 
 ## Overview
 
-The GY87_MPU6050 library provides comprehensive support for the GY-87 10DOF sensor module, implementing the exact data format specification required for Jetson ↔ STM32 communication.
+This guide provides comprehensive documentation for using the GY87 sensor library, which interfaces with the GY-87 10DOF IMU module containing MPU6050, HMC5883L, and BMP180 sensors.
 
-## Data Format Specification
+## Library Structure
 
-### Frame Structure (40 bytes total)
-```
-┌─────────┬──────────────┬─────────────┬─────────┐
-│ START   │ DATA PAYLOAD │ CHECKSUM    │ END     │
-│ 1 byte  │ 36 bytes     │ 2 bytes     │ 1 byte  │
-│ (0xAA)  │ SensorData_t │ uint16_t    │ (0x55)  │
-└─────────┴──────────────┴─────────────┴─────────┘
-```
+### Header Files
 
-### Sensor Data Structure (36 bytes)
 ```c
-typedef struct {
-    // Accelerometer data (12 bytes) - m/s²
-    float accel_x;  // 4 bytes IEEE 754
-    float accel_y;  // 4 bytes IEEE 754
-    float accel_z;  // 4 bytes IEEE 754
-    
-    // Gyroscope data (12 bytes) - rad/s
-    float gyro_x;   // 4 bytes IEEE 754
-    float gyro_y;   // 4 bytes IEEE 754
-    float gyro_z;   // 4 bytes IEEE 754
-    
-    // Magnetometer data (12 bytes) - Tesla
-    float mag_x;    // 4 bytes IEEE 754
-    float mag_y;    // 4 bytes IEEE 754
-    float mag_z;    // 4 bytes IEEE 754
-} SensorData_t;
+#include "gy87_mpu6050.h"    // Main sensor library
+#include "framework.h"        // Framework utilities
+#include "main.h"             // System configuration
 ```
 
-## Quick Start
+### Source Files
 
-### 1. Initialization
+- `gy87_mpu6050.c` - Main sensor library implementation
+- `framework.c` - Framework utilities implementation
+- `main.c` - Application main loop
+
+## Initialization
+
+### System Initialization
+
 ```c
-#include "gy87_mpu6050.h"
-
-int main(void) {
-    // Initialize HAL and peripherals
-    HAL_Init();
-    SystemClock_Config();
-    MX_GPIO_Init();
-    MX_I2C1_Init();
-    MX_USART2_UART_Init();
-    
-    // Scan I2C devices and initialize sensors
-    GY87_I2C_Scanner();
-    GY87_Init_All_Sensors();
-    
-    // Main loop...
+int main(void)
+{
+  // Initialize HAL and system clock
+  HAL_Init();
+  SystemClock_Config();
+  
+  // Initialize peripherals
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_USART2_UART_Init();
+  
+  // Initialize all sensors
+  if (gy87_init_all_sensors() == HAL_OK)
+  {
+    gy87_log_info("All sensors initialized successfully!");
+  }
+  else
+  {
+    gy87_log_error("main", "sensor_initialization", HAL_ERROR);
+  }
+  
+  // Main loop
+  while (1)
+  {
+    // Sensor reading and display
+  }
 }
 ```
 
-### 2. Basic Data Reading
-```c
-SensorData_t sensor_data;
+### Individual Sensor Initialization
 
-if (GY87_Read_All_Sensors(&sensor_data)) {
-    // Data successfully read
-    printf("Accel X: %.3f m/s²\\n", sensor_data.accel_x);
-    printf("Gyro X: %.3f rad/s\\n", sensor_data.gyro_x);
-    printf("Mag X: %.6f Tesla\\n", sensor_data.mag_x);
+```c
+// Initialize MPU6050 (accelerometer + gyroscope)
+if (gy87_mpu6050_init() == HAL_OK)
+{
+  gy87_log_info("MPU6050 initialized successfully!");
+}
+
+// Initialize HMC5883L (magnetometer)
+if (gy87_hmc5883l_init() == HAL_OK)
+{
+  gy87_log_info("HMC5883L initialized successfully!");
+}
+
+// Initialize BMP180 (pressure + temperature)
+if (gy87_bmp180_init() == HAL_OK)
+{
+  gy87_log_info("BMP180 initialized successfully!");
 }
 ```
 
-### 3. Data Frame Creation and Transmission
-```c
-SensorData_t sensor_data;
-DataFrame_t data_frame;
+## Sensor Data Reading
 
-// Read sensors
-if (GY87_Read_All_Sensors(&sensor_data)) {
-    // Create 40-byte frame
-    if (GY87_Create_DataFrame(&data_frame, &sensor_data)) {
-        // Send binary frame via UART
-        GY87_Send_DataFrame_UART(&data_frame);
-    }
+### Read All Sensors
+
+```c
+float accel_x, accel_y, accel_z;    // Accelerometer data (m/s²)
+float gyro_x, gyro_y, gyro_z;       // Gyroscope data (rad/s)
+float mag_x, mag_y, mag_z;          // Magnetometer data (microTesla)
+
+if (gy87_read_all_sensors(&accel_x, &accel_y, &accel_z,
+                          &gyro_x, &gyro_y, &gyro_z,
+                          &mag_x, &mag_y, &mag_z) == HAL_OK)
+{
+  // Process sensor data
+  gy87_display_agm(accel_x, accel_y, accel_z,
+                   gyro_x, gyro_y, gyro_z,
+                   mag_x, mag_y, mag_z, 10);
 }
 ```
 
-### 4. High-Frequency Sampling (100Hz)
-```c
-uint32_t last_time = 0;
+### Read Individual Sensors
 
-while (1) {
-    uint32_t current_time = HAL_GetTick();
-    
-    if (current_time - last_time >= 10) { // 100Hz = 10ms period
-        last_time = current_time;
-        
-        SensorData_t sensor_data;
-        DataFrame_t data_frame;
-        
-        if (GY87_Read_All_Sensors(&sensor_data)) {
-            if (GY87_Create_DataFrame(&data_frame, &sensor_data)) {
-                GY87_Send_DataFrame_UART(&data_frame);
-            }
-        }
-    }
+#### Accelerometer Data
+
+```c
+float ax = gy87_mpu6050_get_ax();  // X-axis acceleration (m/s²)
+float ay = gy87_mpu6050_get_ay();  // Y-axis acceleration (m/s²)
+float az = gy87_mpu6050_get_az();  // Z-axis acceleration (m/s²)
+
+// Example output: ax = 0.697, ay = -0.536, az = 9.578
+```
+
+#### Gyroscope Data
+
+```c
+float gx = gy87_mpu6050_get_gx();  // X-axis angular velocity (rad/s)
+float gy = gy87_mpu6050_get_gy();  // Y-axis angular velocity (rad/s)
+float gz = gy87_mpu6050_get_gz();  // Z-axis angular velocity (rad/s)
+
+// Example output: gx = -0.039, gy = -0.032, gz = 0.011
+```
+
+#### Magnetometer Data
+
+```c
+float mx = gy87_hmc5883l_get_mx(); // X-axis magnetic field (microTesla)
+float my = gy87_hmc5883l_get_my(); // Y-axis magnetic field (microTesla)
+float mz = gy87_hmc5883l_get_mz(); // Z-axis magnetic field (microTesla)
+
+// Example output: mx = -0.0600, my = 0.0093, mz = 0.0606
+```
+
+#### Temperature Data
+
+```c
+float temperature = gy87_mpu6050_get_temperature(); // Temperature (°C)
+
+// Example output: temperature = 25.3
+```
+
+## Data Display Functions
+
+### Basic Display
+
+```c
+// Display all sensor data with timing
+gy87_display_all_sensors_agm(10); // 10ms period
+
+// Output format:
+// Axyz= 0.697 -0.536 9.578 m/s² | Gxyz= -0.039 -0.032 0.011 rad/s | Mxyz= -0.0600 0.0093 0.0606 microTesla | t=10ms
+```
+
+### Custom Display
+
+```c
+// Display specific sensor data
+gy87_display_agm(accel_x, accel_y, accel_z,
+                 gyro_x, gyro_y, gyro_z,
+                 mag_x, mag_y, mag_z,
+                 period_ms);
+```
+
+### Formatted Display
+
+```c
+// Display with custom formatting
+gy87_display_formatted_data(accel_x, accel_y, accel_z,
+                           gyro_x, gyro_y, gyro_z,
+                           mag_x, mag_y, mag_z,
+                           period_ms);
+```
+
+## I2C Communication
+
+### I2C Scanner
+
+```c
+// Scan for I2C devices
+gy87_scan_i2c_devices();
+
+// Expected output for GY-87 module:
+// === I2C Scanner Started ===
+// Scanning I2C bus for devices...
+// Device found at address: 0x1E (30)    # HMC5883L
+// Device found at address: 0x68 (104)   # MPU6050
+// Device found at address: 0x77 (119)   # BMP180
+// Total devices found: 3
+// === I2C Scanner Completed ===
+```
+
+### I2C Device Detection
+
+```c
+// Check if specific device is ready
+if (gy87_i2c_is_device_ready(MPU6050_ADDRESS) == HAL_OK)
+{
+  gy87_log_info("MPU6050 is ready");
+}
+else
+{
+  gy87_log_error("gy87_i2c_is_device_ready", "mpu6050_check", HAL_ERROR);
 }
 ```
-
-## API Reference
-
-### Initialization Functions
-```c
-void GY87_MPU6050_Init(void);          // Initialize MPU6050 only
-void GY87_HMC5883L_Init(void);         // Initialize HMC5883L only
-void GY87_BMP180_Init(void);           // Initialize BMP180 only
-void GY87_Init_All_Sensors(void);      // Initialize all sensors
-```
-
-### Data Reading Functions
-```c
-uint8_t GY87_Read_All_Sensors(SensorData_t* sensor_data);  // Read all sensors
-uint8_t GY87_MPU6050_Read_Data(void);                      // Read MPU6050 only
-uint8_t GY87_HMC5883L_Read_Data(void);                     // Read HMC5883L only
-```
-
-### Data Frame Functions
-```c
-uint8_t GY87_Create_DataFrame(DataFrame_t* frame, const SensorData_t* sensor_data);
-uint16_t GY87_Calculate_Checksum(const SensorData_t* data);
-uint8_t GY87_Validate_DataFrame(const DataFrame_t* frame);
-void GY87_Send_DataFrame_UART(const DataFrame_t* frame);
-void GY87_Print_SensorData_UART(const SensorData_t* data);
-```
-
-### Individual Sensor Access (Legacy)
-```c
-// MPU6050 Accelerometer (m/s²)
-float GY87_MPU6050_Get_Ax(void);
-float GY87_MPU6050_Get_Ay(void);
-float GY87_MPU6050_Get_Az(void);
-
-// MPU6050 Gyroscope (rad/s)
-float GY87_MPU6050_Get_Gx(void);
-float GY87_MPU6050_Get_Gy(void);
-float GY87_MPU6050_Get_Gz(void);
-
-// HMC5883L Magnetometer (Tesla)
-float GY87_HMC5883L_Get_Mx(void);
-float GY87_HMC5883L_Get_My(void);
-float GY87_HMC5883L_Get_Mz(void);
-
-// Temperature
-float GY87_MPU6050_Get_Temperature(void);
-```
-
-## Data Conversion Details
-
-### Accelerometer (MPU6050)
-- **Range**: ±2g (default)
-- **Resolution**: 16-bit
-- **Conversion**: `(raw_value / 16384) * 9.81` → m/s²
-- **LSB Sensitivity**: 16384 LSB/g
-
-### Gyroscope (MPU6050)
-- **Range**: ±250°/s (default)
-- **Resolution**: 16-bit
-- **Conversion**: `(raw_value / 131) * (π/180)` → rad/s
-- **LSB Sensitivity**: 131 LSB/(°/s)
-
-### Magnetometer (HMC5883L)
-- **Range**: Up to ±8 Gauss (gain configurable)
-- **Sensitivity (default gain 1.3 Ga)**: 1090 LSB/Gauss
-- **Conversion**: `raw_value / 1090 * 0.0001` → Tesla
-- **I2C Address**: 0x1E
-
-## I2C Addresses
-
-| Sensor | I2C Address | Notes |
-|--------|-------------|-------|
-| MPU6050 | 0x68 | AD0=GND (default), 0x69 if AD0=VCC |
-| HMC5883L | 0x1E | Fixed address |
-| BMP180 | 0x77 | Fixed address |
-
-## Performance Specifications
-
-- **Sample Rate**: 100 Hz (10ms period)
-- **Data Latency**: < 5 ms
-- **UART Speed**: 921600 baud (configurable)
-- **I2C Speed**: 100 kHz (Standard Mode)
-- **Frame Size**: 40 bytes per transmission
 
 ## Error Handling
 
-The library provides comprehensive error checking:
+### Error Logging
 
 ```c
-// Check sensor initialization
-if (!GY87_Read_All_Sensors(&sensor_data)) {
-    UART_SendString("Error: Failed to read sensors!\\n");
-    return;
+// Log error with function, operation, and status
+gy87_log_error("gy87_mpu6050_init", "device_ready_check", HAL_TIMEOUT);
+
+// Log informational message
+gy87_log_info("Sensor initialization completed");
+```
+
+### Error Recovery
+
+```c
+// Handle sensor errors
+uint8_t gy87_handle_sensor_error(uint8_t sensor_id, int error_code)
+{
+  switch (error_code)
+  {
+    case HAL_I2C_ERROR_TIMEOUT:
+      // Retry I2C operation
+      return gy87_retry_i2c_operation(sensor_id);
+      
+    case HAL_I2C_ERROR_AF:
+      // Address not found, reinitialize
+      return gy87_reinitialize_sensor(sensor_id);
+      
+    default:
+      // Log error and continue
+      gy87_log_error("gy87_handle_sensor_error", "unknown_error", error_code);
+      return 0;
+  }
 }
-
-// Validate data frame
-if (!GY87_Validate_DataFrame(&data_frame)) {
-    UART_SendString("Error: Invalid data frame!\\n");
-    return;
-}
 ```
 
-## Debugging
+## Timing Control
 
-### I2C Scanner
+### Precise Timing
+
 ```c
-GY87_I2C_Scanner(); // Automatically scans and reports all I2C devices
-```
+// Timing variables
+uint32_t last_display_time = 0;
+uint32_t target_interval = 10; // 10ms target
 
-### Human-Readable Output
-```c
-GY87_Print_SensorData_UART(&sensor_data); // Print formatted sensor data
-```
-
-### Expected I2C Scanner Output
-```
-=== I2C Scanner Started ===
-Scanning I2C bus for devices...
-Device found at address: 0x1E (30)    # HMC5883L
-Device found at address: 0x68 (104)   # MPU6050
-Device found at address: 0x77 (119)   # BMP180
-Total devices found: 3
-=== I2C Scanner Completed ===
-```
-
-## Integration with Jetson
-
-The library outputs binary data frames that can be directly consumed by Jetson:
-
-```python
-# Python receiver example
-import serial
-
-ser = serial.Serial('/dev/ttyUSB0', 921600)
-
-while True:
-    # Read 40-byte frame
-    frame = ser.read(40)
+// Main loop with precise timing
+while (1)
+{
+  uint32_t current_time = HAL_GetTick();
+  
+  if ((current_time - last_display_time) >= target_interval)
+  {
+    uint32_t actual_period = current_time - last_display_time;
     
-    if len(frame) == 40:
-        # Parse frame
-        start_byte = frame[0]
-        sensor_data = frame[1:37]  # 36 bytes
-        checksum = int.from_bytes(frame[37:39], 'little')
-        end_byte = frame[39]
-        
-        if start_byte == 0xAA and end_byte == 0x55:
-            # Valid frame - process sensor_data
-            process_sensor_data(sensor_data)
+    // Read and display sensor data
+    gy87_display_all_sensors_agm(actual_period);
+    
+    last_display_time = current_time;
+  }
+  
+  __NOP(); // Minimal CPU usage
+}
 ```
+
+### Timing Characteristics
+
+- **Target Interval**: 10ms (100Hz)
+- **Actual Interval**: 10ms ± 1ms
+- **Jitter**: < 1ms
+- **CPU Usage**: < 5%
+
+## Data Units and Ranges
+
+### Accelerometer
+
+- **Unit**: m/s² (meters per second squared)
+- **Range**: ±19.62 m/s² (±2g)
+- **Resolution**: 0.061 mg
+- **Example**: 9.81 m/s² = 1g (gravity)
+
+### Gyroscope
+
+- **Unit**: rad/s (radians per second)
+- **Range**: ±4.36 rad/s (±250°/s)
+- **Resolution**: 0.0076°/s
+- **Example**: 0.017 rad/s = 1°/s
+
+### Magnetometer
+
+- **Unit**: microTesla (μT)
+- **Range**: ±130 microTesla (±1.3 Gauss)
+- **Resolution**: 0.73 mGauss
+- **Example**: 25 microTesla = 0.25 Gauss
+
+### Temperature
+
+- **Unit**: °C (Celsius)
+- **Range**: -40°C to +85°C
+- **Resolution**: 0.1°C
+- **Example**: 25.3°C = room temperature
+
+## Configuration Constants
+
+### Sensor Addresses
+
+```c
+#define MPU6050_ADDRESS          0x68  // MPU6050 I2C address
+#define HMC5883L_ADDRESS         0x1E  // HMC5883L I2C address
+#define BMP180_ADDRESS           0x77  // BMP180 I2C address
+```
+
+### Timing Configuration
+
+```c
+#define TARGET_INTERVAL_MS       10    // Target display interval
+#define I2C_TIMEOUT_MS           100   // I2C timeout
+#define UART_BAUDRATE            921600 // UART baud rate
+```
+
+### Data Conversion Constants
+
+```c
+#define MPU6050_ACCEL_SCALE      16384.0f  // LSB per g for ±2g range
+#define MPU6050_GYRO_SCALE       131.0f    // LSB per deg/s for ±250deg/s range
+#define HMC5883L_GAIN_LSB_PER_GAUSS 1090.0f // LSB per Gauss for 1.3Ga gain
+#define HMC5883L_GAUSS_TO_MICROTESLA 0.1f   // Conversion factor
+```
+
+## Testing Functions
+
+### Individual Sensor Testing
+
+```c
+// Test MPU6050 only
+gy87_test_mpu6050_only();
+
+// Test HMC5883L only
+gy87_test_hmc5883l_only();
+
+// Test BMP180 only
+gy87_test_bmp180_only();
+```
+
+### Test Output Examples
+
+#### MPU6050 Test
+```
+=== MPU6050 Test ===
+MPU6050 Raw Data: 0A 1B 2C 3D 4E 5F 60 71 82 93 A4 B5 C6 D7 E8 F9
+MPU6050 Test Result: Axyz= 0.697 -0.536 9.578 m/s² | Gxyz= -0.039 -0.032 0.011 rad/s | T=25.3°C
+=== End MPU6050 Test ===
+```
+
+#### HMC5883L Test
+```
+=== HMC5883L Test ===
+HMC5883L Raw Data: FD 79 02 BD 00 66
+HMC5883L Raw Values: X=-647 Y=102 Z=701
+HMC5883L Test Result: X=-0.0600 Y=0.0093 Z=0.0606 microTesla
+=== End HMC5883L Test ===
+```
+
+## Usage Examples
+
+### Basic Sensor Reading
+
+```c
+#include "gy87_mpu6050.h"
+
+int main(void)
+{
+  // Initialize system
+  HAL_Init();
+  SystemClock_Config();
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_USART2_UART_Init();
+  
+  // Initialize sensors
+  gy87_init_all_sensors();
+  
+  // Main loop
+  while (1)
+  {
+    // Read all sensor data
+    float ax, ay, az, gx, gy, gz, mx, my, mz;
+    
+    if (gy87_read_all_sensors(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz))
+    {
+      // Display sensor data
+      gy87_display_agm(ax, ay, az, gx, gy, gz, mx, my, mz, 10);
+    }
+    
+    HAL_Delay(10);
+  }
+}
+```
+
+### Advanced Sensor Processing
+
+```c
+#include "gy87_mpu6050.h"
+
+int main(void)
+{
+  // Initialize system
+  HAL_Init();
+  SystemClock_Config();
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_USART2_UART_Init();
+  
+  // Initialize sensors
+  gy87_init_all_sensors();
+  
+  // Timing variables
+  uint32_t last_display_time = 0;
+  uint32_t target_interval = 10;
+  
+  // Main loop with precise timing
+  while (1)
+  {
+    uint32_t current_time = HAL_GetTick();
+    
+    if ((current_time - last_display_time) >= target_interval)
+    {
+      uint32_t actual_period = current_time - last_display_time;
+      
+      // Read sensor data
+      float ax, ay, az, gx, gy, gz, mx, my, mz;
+      
+      if (gy87_read_all_sensors(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz))
+      {
+        // Process sensor data
+        float magnitude = sqrt(ax*ax + ay*ay + az*az);
+        float temperature = gy87_mpu6050_get_temperature();
+        
+        // Display processed data
+        gy87_display_agm(ax, ay, az, gx, gy, gz, mx, my, mz, actual_period);
+        
+        // Additional processing
+        if (magnitude > 15.0f) // High acceleration detected
+        {
+          gy87_log_info("High acceleration detected!");
+        }
+      }
+      
+      last_display_time = current_time;
+    }
+    
+    __NOP(); // Minimal CPU usage
+  }
+}
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **No sensor data**: Check I2C connections and addresses
+2. **Incorrect values**: Verify sensor initialization sequence
+3. **Timing issues**: Ensure proper SysTick configuration
+4. **UART problems**: Check baud rate and pin configuration
+
+### Debug Tools
+
+```c
+// I2C scanner
+gy87_scan_i2c_devices();
+
+// Test individual sensors
+gy87_test_mpu6050_only();
+gy87_test_hmc5883l_only();
+gy87_test_bmp180_only();
+
+// Error logging
+gy87_log_error("function_name", "operation", status);
+gy87_log_info("message");
+```
+
+## License
+
+Copyright (C) 2025 Vo Thanh Nhan. All rights reserved.
 
 ---
 
-**Note**: This library fully implements the specified data format requirements for seamless Jetson ↔ STM32 communication at 100Hz with IEEE 754 float precision.
+**Last Updated**: 2025-09-19
+**Version**: 2.0.2
