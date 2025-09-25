@@ -44,6 +44,7 @@
 
 /* HMC5883L Configuration Values */
 #define HMC5883L_CFG_A_8AVG_15HZ    (0x70) /*!< 8-average, 15 Hz, normal measurement */
+#define HMC5883L_CFG_A_8AVG_75HZ    (0x78) /*!< 8-average, 75 Hz, normal measurement (closest to 60 Hz) */
 #define HMC5883L_CFG_B_GAIN_1_3GA   (0x20) /*!< Gain = 1.3 Ga (1090 LSB/Gauss) */
 #define HMC5883L_MODE_IDLE          (0x02) /*!< Idle mode */
 #define HMC5883L_MODE_SINGLE        (0x01) /*!< Single measurement mode */
@@ -64,6 +65,23 @@
 #define MPU6050_TEMP_OFFSET             (36.53f)   /*!< Temperature offset */
 #define MPU6050_G_TO_MS2                (9.81f)    /*!< Gravity to m/s² conversion */
 #define MPU6050_DEG_TO_RAD              (0.017453292519943295f) /*!< Degrees to radians */
+
+/* MPU6050 Registers for Auxiliary I2C Master */
+#define MPU6050_REG_INT_PIN_CFG         (0x37)
+#define MPU6050_REG_USER_CTRL           (0x6A)
+#define MPU6050_REG_I2C_MST_CTRL        (0x24)
+#define MPU6050_REG_I2C_SLV0_ADDR       (0x25)
+#define MPU6050_REG_I2C_SLV0_REG        (0x26)
+#define MPU6050_REG_I2C_SLV0_CTRL       (0x27)
+#define MPU6050_REG_EXT_SENS_DATA_00    (0x49)
+
+/* MPU6050 Bitfields */
+#define MPU6050_BIT_I2C_BYPASS_EN       (0x02) /* INT_PIN_CFG */
+#define MPU6050_BIT_I2C_MST_EN          (0x20) /* USER_CTRL */
+
+/* MPU6050 I2C master clock: 0x0D is ~400kHz. 0x07 ~ 100kHz (datasheet). */
+#define MPU6050_I2C_MST_CLK_400KHZ      (0x0D)
+#define MPU6050_I2C_MST_CLK_100KHZ      (0x07)
 
 /* Timing Constants */
 #define I2C_TIMEOUT_MS                  (100)  /*!< I2C communication timeout */
@@ -181,6 +199,11 @@ static void gy87_format_sensor_data(char *buffer, size_t buffer_size,
                                    float mx, float my, float mz,
                                    uint32_t period_ms);
 
+/* Configure MPU6050 internal I2C master to read HMC5883L over SLV0 */
+static uint8_t gy87_mpu6050_enable_i2c_master_for_hmc(void);
+/* Read 6 magnetometer bytes via MPU6050 EXT_SENS_DATA registers */
+static uint8_t gy87_hmc5883l_read_via_mpu(void);
+
 /* Function definitions ----------------------------------------------- */
 void gy87_i2c_scanner(void)
 {
@@ -248,7 +271,7 @@ void gy87_mpu6050_init(void)
     return;
   }
   
-  HAL_Delay(100);
+  HAL_Delay(10);
   
   // Configure accelerometer range (±2g)
   s_data_tx[0] = 0x1C;  // ACCEL_CONFIG register
@@ -272,6 +295,28 @@ void gy87_mpu6050_init(void)
     return;
   }
   
+  // Ensure internal I2C master is disabled before enabling BYPASS
+  s_data_tx[0] = MPU6050_REG_USER_CTRL; // USER_CTRL
+  s_data_tx[1] = 0x00; // I2C_MST_EN = 0
+  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS);
+  if (I2C_CHECK_STATUS(status))
+  {
+    gy87_log_error("MPU6050_Init", "USER_CTRL (disable I2C_MST)", (int)status);
+    return;
+  }
+  HAL_Delay(5);
+
+  // Enable BYPASS to allow MCU to configure and read external magnetometer directly
+  s_data_tx[0] = MPU6050_REG_INT_PIN_CFG; // INT_PIN_CFG
+  s_data_tx[1] = MPU6050_BIT_I2C_BYPASS_EN; // Enable bypass so HMC5883L is visible on main I2C bus
+  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS);
+  if (I2C_CHECK_STATUS(status))
+  {
+    gy87_log_error("MPU6050_Init", "INT_PIN_CFG (bypass)", (int)status);
+    return;
+  }
+  HAL_Delay(100); // Important delay after enabling BYPASS
+  
   gy87_log_info("MPU6050 initialized successfully!");
 }
 
@@ -280,12 +325,20 @@ void gy87_hmc5883l_init(void)
   gy87_log_info("Initializing HMC5883L...");
   
     HAL_StatusTypeDef status;
-    
-    // Configure HMC5883L: 8-average, 15Hz, normal measurement
-  s_data_tx[0] = HMC5883L_REG_CONFIG_A;
-  s_data_tx[1] = HMC5883L_CFG_A_8AVG_15HZ;
   
-  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS);
+  // Verify device presence at 0x1E (bypass must be enabled earlier)
+  if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), 1, I2C_SCAN_TIMEOUT) != HAL_OK)
+  {
+    gy87_log_error("HMC5883L_Init", "Device not ready (0x1E)", 1);
+    return;
+  }
+
+  // Configure HMC5883L: 8-average, 15Hz, normal measurement
+  {
+    uint8_t val = HMC5883L_CFG_A_8AVG_15HZ;
+    status = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), HMC5883L_REG_CONFIG_A,
+                               I2C_MEMADD_SIZE_8BIT, &val, 1, I2C_TIMEOUT_MS);
+  }
   if (I2C_CHECK_STATUS(status))
   {
     gy87_log_error("HMC5883L_Init", "Config A", (int)status);
@@ -294,10 +347,11 @@ void gy87_hmc5883l_init(void)
   HAL_Delay(HMC5883L_INIT_DELAY_MS);
   
   // Gain = 1.3 Gauss (suitable for most environments)
-  s_data_tx[0] = HMC5883L_REG_CONFIG_B;
-  s_data_tx[1] = HMC5883L_CFG_B_GAIN_1_3GA;
-  
-  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS);
+  {
+    uint8_t val = HMC5883L_CFG_B_GAIN_1_3GA;
+    status = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), HMC5883L_REG_CONFIG_B,
+                               I2C_MEMADD_SIZE_8BIT, &val, 1, I2C_TIMEOUT_MS);
+  }
   if (I2C_CHECK_STATUS(status))
   {
     gy87_log_error("HMC5883L_Init", "Config B", (int)status);
@@ -306,10 +360,11 @@ void gy87_hmc5883l_init(void)
   HAL_Delay(HMC5883L_INIT_DELAY_MS);
   
   // Set to idle mode first (recommended sequence)
-  s_data_tx[0] = HMC5883L_REG_MODE;
-  s_data_tx[1] = HMC5883L_MODE_IDLE;
-  
-  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS);
+  {
+    uint8_t val = HMC5883L_MODE_IDLE;
+    status = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), HMC5883L_REG_MODE,
+                               I2C_MEMADD_SIZE_8BIT, &val, 1, I2C_TIMEOUT_MS);
+  }
   if (I2C_CHECK_STATUS(status))
   {
     gy87_log_error("HMC5883L_Init", "Idle mode", (int)status);
@@ -318,10 +373,11 @@ void gy87_hmc5883l_init(void)
   HAL_Delay(HMC5883L_INIT_DELAY_MS);
   
   // Kick a single measurement first (wake up the sensor)
-  s_data_tx[0] = HMC5883L_REG_MODE;
-  s_data_tx[1] = HMC5883L_MODE_SINGLE;
-  
-  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS);
+  {
+    uint8_t val = HMC5883L_MODE_SINGLE;
+    status = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), HMC5883L_REG_MODE,
+                               I2C_MEMADD_SIZE_8BIT, &val, 1, I2C_TIMEOUT_MS);
+  }
   if (I2C_CHECK_STATUS(status))
   {
     gy87_log_error("HMC5883L_Init", "Single measurement", (int)status);
@@ -330,16 +386,17 @@ void gy87_hmc5883l_init(void)
   HAL_Delay(HMC5883L_MEASURE_DELAY_MS);
   
   // Set to continuous measurement mode
-  s_data_tx[0] = HMC5883L_REG_MODE;
-  s_data_tx[1] = HMC5883L_MODE_CONTINUOUS;
-  
-  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS);
+  {
+    uint8_t val = HMC5883L_MODE_CONTINUOUS;
+    status = HAL_I2C_Mem_Write(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), HMC5883L_REG_MODE,
+                               I2C_MEMADD_SIZE_8BIT, &val, 1, I2C_TIMEOUT_MS);
+  }
   if (I2C_CHECK_STATUS(status))
   {
     gy87_log_error("HMC5883L_Init", "Continuous mode", (int)status);
         return;
     }
-    HAL_Delay(100);  // Important delay after configuration
+    HAL_Delay(67);  // Allow first measurement
     
   gy87_log_info("HMC5883L initialized successfully!");
 }
@@ -391,25 +448,26 @@ uint8_t gy87_hmc5883l_read_data(void)
 {
 	HAL_StatusTypeDef status;
   
+  // Direct read in BYPASS mode
   s_data_tx[0] = HMC5883L_REG_DATA_X_MSB;
-	
-	// Send register address
+
+  // Send register address
   status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), &s_data_tx[0], 1, I2C_TIMEOUT_MS);
-//  if (I2C_CHECK_STATUS(status))
-//  {
-//    gy87_log_error("HMC5883L_Read", "Data TX", (int)status);
-//		return 0;
-//	}
-//
+  if (I2C_CHECK_STATUS(status))
+  {
+    gy87_log_error("HMC5883L_Read", "Data TX", (int)status);
+    return 0;
+  }
+
   // Read 6 bytes: X MSB, X LSB, Z MSB, Z LSB, Y MSB, Y LSB
   status = HAL_I2C_Master_Receive(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), s_hmc5883l_data_rx, 6, I2C_TIMEOUT_MS);
   if (I2C_CHECK_STATUS(status))
   {
     gy87_log_error("HMC5883L_Read", "Data RX", (int)status);
-		return 0;
-    }
-	
-	return 1;
+    return 0;
+  }
+
+  return 1;
 }
 
 uint8_t gy87_read_all_sensors(float *accel_x, float *accel_y, float *accel_z,
@@ -419,8 +477,8 @@ uint8_t gy87_read_all_sensors(float *accel_x, float *accel_y, float *accel_z,
 	// Read MPU6050 data
   if (!gy87_mpu6050_read_data()) return 0;
 	
-    // Read HMC5883L data
- // if (!gy87_hmc5883l_read_data()) return 0;
+  // Read HMC5883L data (via MPU6050 I2C master or bypass fallback)
+  if (!gy87_hmc5883l_read_data()) return 0;
 	
 	// Get accelerometer data (m/s²)
   *accel_x = gy87_mpu6050_get_ax();
@@ -614,6 +672,74 @@ void gy87_display_mpu6050_only_agm(uint32_t period_ms)
   last_display_time = current_time;
 }
 
+void GY87_Display_All_Sensors_AGM(uint32_t period_ms)
+{
+  gy87_display_all_sensors_agm(period_ms);
+}
+
+static uint8_t read_hmc_reg(uint8_t reg, uint8_t *val)
+{
+  HAL_StatusTypeDef status;
+  s_data_tx[0] = reg;
+  status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), &s_data_tx[0], 1, I2C_TIMEOUT_MS);
+  if (status != HAL_OK) return 0;
+  status = HAL_I2C_Master_Receive(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), val, 1, I2C_TIMEOUT_MS);
+  return (status == HAL_OK) ? 1 : 0;
+}
+
+void gy87_hmc5883l_debug(void)
+{
+  char buf[96];
+  gy87_log_info("=== HMC5883L Debug ===");
+
+  // Check presence
+  if (HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), 1, I2C_SCAN_TIMEOUT) == HAL_OK)
+  {
+    gy87_log_info("HMC5883L at 0x1E: READY");
+  }
+  else
+  {
+    gy87_log_info("HMC5883L at 0x1E: NOT READY");
+  }
+
+  // Read ID A/B/C
+  uint8_t id_a=0, id_b=0, id_c=0;
+  if (read_hmc_reg(HMC5883L_REG_ID_A, &id_a) &&
+      read_hmc_reg(HMC5883L_REG_ID_B, &id_b) &&
+      read_hmc_reg(HMC5883L_REG_ID_C, &id_c))
+  {
+    snprintf(buf, sizeof(buf), "ID A/B/C = 0x%02X 0x%02X 0x%02X", id_a, id_b, id_c);
+    gy87_log_info(buf);
+  }
+  else
+  {
+    gy87_log_info("Read ID registers failed");
+  }
+
+  // Read Config A/B and Mode
+  uint8_t cfg_a=0, cfg_b=0, mode=0, status=0;
+  if (read_hmc_reg(HMC5883L_REG_CONFIG_A, &cfg_a)) { snprintf(buf, sizeof(buf), "CONFIG_A = 0x%02X", cfg_a); gy87_log_info(buf);} else { gy87_log_info("CONFIG_A read fail"); }
+  if (read_hmc_reg(HMC5883L_REG_CONFIG_B, &cfg_b)) { snprintf(buf, sizeof(buf), "CONFIG_B = 0x%02X", cfg_b); gy87_log_info(buf);} else { gy87_log_info("CONFIG_B read fail"); }
+  if (read_hmc_reg(HMC5883L_REG_MODE, &mode))       { snprintf(buf, sizeof(buf), "MODE     = 0x%02X", mode);  gy87_log_info(buf);} else { gy87_log_info("MODE read fail"); }
+  if (read_hmc_reg(HMC5883L_REG_STATUS, &status))   { snprintf(buf, sizeof(buf), "STATUS   = 0x%02X", status);gy87_log_info(buf);} else { gy87_log_info("STATUS read fail"); }
+
+  // Try reading one sample (X,Z,Y order)
+  if (gy87_hmc5883l_read_data())
+  {
+    float mx = gy87_hmc5883l_get_mx();
+    float my = gy87_hmc5883l_get_my();
+    float mz = gy87_hmc5883l_get_mz();
+    snprintf(buf, sizeof(buf), "Sample Mxyz = %.3f %.3f %.3f uT", mx, my, mz);
+    gy87_log_info(buf);
+  }
+  else
+  {
+    gy87_log_info("Sample read failed");
+  }
+
+  gy87_log_info("=== End HMC5883L Debug ===");
+}
+
 void gy87_test_hmc5883l_only(void)
 {
   gy87_log_info("=== HMC5883L Test ===");
@@ -654,11 +780,80 @@ static void gy87_format_sensor_data(char *buffer, size_t buffer_size,
                                    uint32_t period_ms)
 {
   snprintf(buffer, buffer_size,
-    "Axyz= %.3f %.3f %.3f m/s² | "
+    "Axyz= %.3f %.3f %.3f m/s2 | "
     "Gxyz= %.3f %.3f %.3f rad/s | "
     "Mxyz= %.4f %.4f %.4f microTesla | "
-    "t=%lums",
+    "t=% lums",
     ax, ay, az, gx, gy, gz, mx, my, mz, period_ms);
 }
 
+/* Configure MPU6050 internal I2C master to read HMC5883L over SLV0 */
+static uint8_t gy87_mpu6050_enable_i2c_master_for_hmc(void)
+{
+  // Disable BYPASS (route aux lines to internal master)
+  s_data_tx[0] = MPU6050_REG_INT_PIN_CFG;
+  s_data_tx[1] = 0x00; // BYPASS disabled
+  if (HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  // Enable I2C master
+  s_data_tx[0] = MPU6050_REG_USER_CTRL;
+  s_data_tx[1] = MPU6050_BIT_I2C_MST_EN;
+  if (HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  // Configure master clock (400kHz) for fast transfers
+  s_data_tx[0] = MPU6050_REG_I2C_MST_CTRL;
+  s_data_tx[1] = MPU6050_I2C_MST_CLK_400KHZ;
+  if (HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  // Configure SLV0 to read 6 bytes from HMC5883L starting at DATA_X_MSB
+  s_data_tx[0] = MPU6050_REG_I2C_SLV0_ADDR;
+  s_data_tx[1] = (uint8_t)((HMC5883L_ADDRESS << 1) | 0x80);
+  if (HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  s_data_tx[0] = MPU6050_REG_I2C_SLV0_REG;
+  s_data_tx[1] = HMC5883L_REG_DATA_X_MSB;
+  if (HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  s_data_tx[0] = MPU6050_REG_I2C_SLV0_CTRL;
+  s_data_tx[1] = (uint8_t)(0x80 | 6); // Enable, length 6 bytes
+  if (HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_data_tx, 2, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  return 1;
+}
+
+/* Read 6 magnetometer bytes via MPU6050 EXT_SENS_DATA registers */
+static uint8_t gy87_hmc5883l_read_via_mpu(void)
+{
+  // Read from MPU6050 EXT_SENS_DATA registers (0x49..0x4E)
+  s_data_tx[0] = MPU6050_REG_EXT_SENS_DATA_00;
+  if (HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), &s_data_tx[0], 1, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  if (HAL_I2C_Master_Receive(&hi2c1, (uint16_t)(MPU6050_ADDRESS << 1), s_hmc5883l_data_rx, 6, I2C_TIMEOUT_MS) != HAL_OK)
+  {
+    return 0;
+  }
+
+  return 1;
+}
 /* End of file -------------------------------------------------------- */

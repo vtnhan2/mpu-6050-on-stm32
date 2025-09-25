@@ -103,6 +103,8 @@ int main(void)
   
   // Initialize GY87 sensors
   gy87_init_all_sensors();
+  // Debug HMC5883L once at startup
+  gy87_hmc5883l_debug();
   
   // Initialize framework
   framework_init();
@@ -141,18 +143,18 @@ int main(void)
         frame.gyro_x  = gyro_x;
         frame.gyro_y  = gyro_y;
         frame.gyro_z  = gyro_z;
-        frame.mag_x   = 0.0f;
-        frame.mag_y   = 0.0f;
-        frame.mag_z   = 0.0f;
-        (void)framework_transmit_sensor_data(&frame);
+        frame.mag_x   = 0.7f;
+        frame.mag_y   = 0.7f;
+        frame.mag_z   = 0.7f;
+      //  (void)framework_transmit_sensor_data(&frame);
       }
       
+      // Display all sensor data (Accelerometer, Gyroscope, Magnetometer)
+      GY87_Display_All_Sensors_AGM(actual_period);
+
       // Update last display time
       last_display_time = current_time;
     }
-    
-    // Small delay to prevent CPU from running at 100%
-    // This ensures precise timing without blocking
     __NOP(); // No operation - minimal CPU usage
     
   }

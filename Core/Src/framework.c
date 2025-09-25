@@ -151,8 +151,8 @@ uint8_t framework_pack_sensor_data(const sensor_frame_t *sensor_data,
   memset(frame_buffer + offset, 0, (FRAME_DATA_SIZE - 24));
   offset += (FRAME_DATA_SIZE - 24);
   
-  // Calculate and add checksum (16-bit, little-endian) over [START + DATA]
-  uint16_t checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer, (1 + FRAME_DATA_SIZE));
+  // Calculate and add checksum (16-bit, little-endian) over DATA only (exclude START)
+  uint16_t checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer + 1, FRAME_DATA_SIZE);
   frame_buffer[offset++] = (uint8_t)(checksum & 0xFF);
   frame_buffer[offset++] = (uint8_t)((checksum >> 8) & 0xFF);
 
@@ -288,8 +288,8 @@ uint8_t framework_validate_frame(const uint8_t *frame_buffer, size_t buffer_size
     return 1;
   }
   
-  // Check checksum (16-bit, little-endian at the end before END byte), sum over [START + DATA]
-  uint16_t calculated_checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer, (1 + FRAME_DATA_SIZE));
+  // Check checksum (16-bit, little-endian at the end before END byte), sum over DATA only (exclude START)
+  uint16_t calculated_checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer + 1, FRAME_DATA_SIZE);
   uint16_t received_checksum = (uint16_t)frame_buffer[FRAME_TOTAL_SIZE - 3] |
                                ((uint16_t)frame_buffer[FRAME_TOTAL_SIZE - 2] << 8);
   

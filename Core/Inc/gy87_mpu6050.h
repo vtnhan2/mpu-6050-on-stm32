@@ -377,6 +377,22 @@ void gy87_display_mpu6050_only_agm(uint32_t period_ms);
 void gy87_test_hmc5883l_only(void);
 
 /**
+ * @brief  Debug HMC5883L: presence, ID registers, config, status, sample data
+ *
+ * @attention  Prints diagnostic info over UART
+ */
+void gy87_hmc5883l_debug(void);
+
+/**
+ * @brief  Compatibility wrapper to display all sensors (AGM) over UART
+ *
+ * @param[in]     period_ms  Display period in milliseconds
+ *
+ * @attention  Calls gy87_display_all_sensors_agm(period_ms)
+ */
+void GY87_Display_All_Sensors_AGM(uint32_t period_ms);
+
+/**
  * @brief  Log error message to UART
  *
  * @param[in]     function   Function name where error occurred
