@@ -395,12 +395,12 @@ uint8_t gy87_hmc5883l_read_data(void)
 	
 	// Send register address
   status = HAL_I2C_Master_Transmit(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), &s_data_tx[0], 1, I2C_TIMEOUT_MS);
-  if (I2C_CHECK_STATUS(status))
-  {
-    gy87_log_error("HMC5883L_Read", "Data TX", (int)status);
-		return 0;
-	}
-	
+//  if (I2C_CHECK_STATUS(status))
+//  {
+//    gy87_log_error("HMC5883L_Read", "Data TX", (int)status);
+//		return 0;
+//	}
+//
   // Read 6 bytes: X MSB, X LSB, Z MSB, Z LSB, Y MSB, Y LSB
   status = HAL_I2C_Master_Receive(&hi2c1, (uint16_t)(HMC5883L_ADDRESS << 1), s_hmc5883l_data_rx, 6, I2C_TIMEOUT_MS);
   if (I2C_CHECK_STATUS(status))
@@ -420,7 +420,7 @@ uint8_t gy87_read_all_sensors(float *accel_x, float *accel_y, float *accel_z,
   if (!gy87_mpu6050_read_data()) return 0;
 	
     // Read HMC5883L data
-  if (!gy87_hmc5883l_read_data()) return 0;
+ // if (!gy87_hmc5883l_read_data()) return 0;
 	
 	// Get accelerometer data (m/s²)
   *accel_x = gy87_mpu6050_get_ax();

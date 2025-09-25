@@ -124,13 +124,13 @@ uint8_t framework_pack_sensor_data(const sensor_frame_t *sensor_data,
   // Clear frame buffer
   memset(frame_buffer, 0, buffer_size);
   
-  // Frame structure: [START][DATA][CHECKSUM][END]
+  // Frame structure: [START][DATA][CHECKSUM_L][CHECKSUM_H][END]
   uint8_t offset = 0;
   
   // Start byte
   frame_buffer[offset++] = FRAME_START_BYTE;
   
-  // Pack accelerometer data
+  // Pack accelerometer data (3 floats)
   PACK_FLOAT(sensor_data->accel_x, frame_buffer, offset);
   offset += 4;
   PACK_FLOAT(sensor_data->accel_y, frame_buffer, offset);
@@ -138,7 +138,7 @@ uint8_t framework_pack_sensor_data(const sensor_frame_t *sensor_data,
   PACK_FLOAT(sensor_data->accel_z, frame_buffer, offset);
   offset += 4;
   
-  // Pack gyroscope data
+  // Pack gyroscope data (3 floats)
   PACK_FLOAT(sensor_data->gyro_x, frame_buffer, offset);
   offset += 4;
   PACK_FLOAT(sensor_data->gyro_y, frame_buffer, offset);
@@ -146,19 +146,17 @@ uint8_t framework_pack_sensor_data(const sensor_frame_t *sensor_data,
   PACK_FLOAT(sensor_data->gyro_z, frame_buffer, offset);
   offset += 4;
   
-  // Pack magnetometer data
-  PACK_FLOAT(sensor_data->mag_x, frame_buffer, offset);
-  offset += 4;
-  PACK_FLOAT(sensor_data->mag_y, frame_buffer, offset);
-  offset += 4;
-  PACK_FLOAT(sensor_data->mag_z, frame_buffer, offset);
-  offset += 4;
+  // No magnetometer required. Zero-pad remaining bytes to keep DATA size = 36
+  // We have packed 24 bytes so far (6 floats). Pad 12 bytes.
+  memset(frame_buffer + offset, 0, (FRAME_DATA_SIZE - 24));
+  offset += (FRAME_DATA_SIZE - 24);
   
-  // Calculate and add checksum
-  uint8_t checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer + 1, FRAME_DATA_SIZE);
-  frame_buffer[offset++] = checksum;
-  
-  // End byte
+  // Calculate and add checksum (16-bit, little-endian) over [START + DATA]
+  uint16_t checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer, (1 + FRAME_DATA_SIZE));
+  frame_buffer[offset++] = (uint8_t)(checksum & 0xFF);
+  frame_buffer[offset++] = (uint8_t)((checksum >> 8) & 0xFF);
+
+  // End byte (0x00)
   frame_buffer[offset++] = FRAME_END_BYTE;
   
   return 0;
@@ -290,9 +288,10 @@ uint8_t framework_validate_frame(const uint8_t *frame_buffer, size_t buffer_size
     return 1;
   }
   
-  // Check checksum
-  uint8_t calculated_checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer + 1, FRAME_DATA_SIZE);
-  uint8_t received_checksum = frame_buffer[FRAME_TOTAL_SIZE - 2];
+  // Check checksum (16-bit, little-endian at the end before END byte), sum over [START + DATA]
+  uint16_t calculated_checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer, (1 + FRAME_DATA_SIZE));
+  uint16_t received_checksum = (uint16_t)frame_buffer[FRAME_TOTAL_SIZE - 3] |
+                               ((uint16_t)frame_buffer[FRAME_TOTAL_SIZE - 2] << 8);
   
   if (calculated_checksum != received_checksum)
   {

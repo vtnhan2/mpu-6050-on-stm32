@@ -26,11 +26,12 @@
 /* Public defines ----------------------------------------------------- */
 /* Data Frame Protocol Constants */
 #define FRAME_START_BYTE     (0xAA) /*!< Frame start delimiter */
-#define FRAME_END_BYTE       (0x55) /*!< Frame end delimiter */
-#define FRAME_DATA_SIZE      (36)   /*!< Sensor data size in bytes */
-#define FRAME_TOTAL_SIZE     (40)   /*!< Total frame size in bytes */
+#define FRAME_END_BYTE       (0x00) /*!< Frame end delimiter */
+#define FRAME_DATA_SIZE      (36)   /*!< Payload size: accel+gyro (24) + padding (12) */
+#define FRAME_CHECKSUM_SIZE  (2)    /*!< Checksum size in bytes */
 #define FRAME_HEADER_SIZE    (1)    /*!< Frame header size in bytes */
-#define FRAME_FOOTER_SIZE    (3)    /*!< Frame footer size in bytes */
+#define FRAME_FOOTER_SIZE    (FRAME_CHECKSUM_SIZE + 1) /*!< Footer: checksum + end byte */
+#define FRAME_TOTAL_SIZE     (FRAME_HEADER_SIZE + FRAME_DATA_SIZE + FRAME_FOOTER_SIZE) /*!< Total frame size in bytes */
 
 /* Sensor Data Offsets */
 #define ACCEL_DATA_OFFSET    (0)    /*!< Accelerometer data offset */
@@ -77,9 +78,9 @@ frame_status_t;
  */
 #define FRAME_CALCULATE_CHECKSUM(data, length)  \
   ({ \
-    uint8_t checksum = 0; \
+    uint16_t checksum = 0; \
     for (int i = 0; i < (length); i++) { \
-      checksum ^= (data)[i]; \
+      checksum = (uint16_t)(checksum + (data)[i]); \
     } \
     checksum; \
   })

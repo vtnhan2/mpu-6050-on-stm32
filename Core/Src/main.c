@@ -107,12 +107,7 @@ int main(void)
   // Initialize framework
   framework_init();
   
-  // Display initialization message
-  UART_SendString("GY87 IMU System Initialized\r\n");
-  UART_SendString("UART Baud Rate: 921600\r\n");
-  UART_SendString("Data Frame Size: 40 bytes\r\n");
-  UART_SendString("Starting sensor data display at 100Hz...\r\n");
-  UART_SendString("Format: Accelerometer | Gyroscope | Magnetometer | Period\r\n\r\n");
+  // Binary mode: do not send any ASCII banners over UART
 
   /* USER CODE END 2 */
 
@@ -138,8 +133,18 @@ int main(void)
                                 &gyro_x, &gyro_y, &gyro_z, 
                                 &mag_x, &mag_y, &mag_z))
       {
-        // Display sensor data with precise timing
-        gy87_display_all_sensors_agm(actual_period);
+        // Transmit binary HEX frame over UART using framework (no magnetometer in payload)
+        sensor_frame_t frame;
+        frame.accel_x = accel_x;
+        frame.accel_y = accel_y;
+        frame.accel_z = accel_z;
+        frame.gyro_x  = gyro_x;
+        frame.gyro_y  = gyro_y;
+        frame.gyro_z  = gyro_z;
+        frame.mag_x   = 0.0f;
+        frame.mag_y   = 0.0f;
+        frame.mag_z   = 0.0f;
+        (void)framework_transmit_sensor_data(&frame);
       }
       
       // Update last display time
