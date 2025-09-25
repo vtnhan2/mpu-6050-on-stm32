@@ -135,7 +135,7 @@ int main(void)
                                 &gyro_x, &gyro_y, &gyro_z, 
                                 &mag_x, &mag_y, &mag_z))
       {
-        // Transmit binary HEX frame over UART using framework (no magnetometer in payload)
+        // Transmit binary frame over UART using framework (Accel/Gyro/Mag included)
         sensor_frame_t frame;
         frame.accel_x = accel_x;
         frame.accel_y = accel_y;
@@ -143,14 +143,14 @@ int main(void)
         frame.gyro_x  = gyro_x;
         frame.gyro_y  = gyro_y;
         frame.gyro_z  = gyro_z;
-        frame.mag_x   = 0.7f;
-        frame.mag_y   = 0.7f;
-        frame.mag_z   = 0.7f;
-      //  (void)framework_transmit_sensor_data(&frame);
+        frame.mag_x   = mag_x; // microTesla
+        frame.mag_y   = mag_y; // microTesla
+        frame.mag_z   = mag_z; // microTesla
+        (void)framework_transmit_sensor_data(&frame);
       }
       
       // Display all sensor data (Accelerometer, Gyroscope, Magnetometer)
-      GY87_Display_All_Sensors_AGM(actual_period);
+      //GY87_Display_All_Sensors_AGM(actual_period);
 
       // Update last display time
       last_display_time = current_time;

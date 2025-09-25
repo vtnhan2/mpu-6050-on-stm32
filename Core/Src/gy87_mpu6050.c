@@ -780,10 +780,10 @@ static void gy87_format_sensor_data(char *buffer, size_t buffer_size,
                                    uint32_t period_ms)
 {
   snprintf(buffer, buffer_size,
-    "Axyz= %.3f %.3f %.3f m/s2 | "
-    "Gxyz= %.3f %.3f %.3f rad/s | "
+    "Axyz= %.4f %.4f %.4f m/s2 | "
+    "Gxyz= %.4f %.4f %.4f rad/s | "
     "Mxyz= %.4f %.4f %.4f microTesla | "
-    "t=% lums",
+    "t=%lums",
     ax, ay, az, gx, gy, gz, mx, my, mz, period_ms);
 }
 

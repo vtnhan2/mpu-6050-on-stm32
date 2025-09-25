@@ -146,10 +146,13 @@ uint8_t framework_pack_sensor_data(const sensor_frame_t *sensor_data,
   PACK_FLOAT(sensor_data->gyro_z, frame_buffer, offset);
   offset += 4;
   
-  // No magnetometer required. Zero-pad remaining bytes to keep DATA size = 36
-  // We have packed 24 bytes so far (6 floats). Pad 12 bytes.
-  memset(frame_buffer + offset, 0, (FRAME_DATA_SIZE - 24));
-  offset += (FRAME_DATA_SIZE - 24);
+  // Pack magnetometer data (3 floats = 12 bytes)
+  PACK_FLOAT(sensor_data->mag_x, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->mag_y, frame_buffer, offset);
+  offset += 4;
+  PACK_FLOAT(sensor_data->mag_z, frame_buffer, offset);
+  offset += 4;
   
   // Calculate and add checksum (16-bit, little-endian) over DATA only (exclude START)
   uint16_t checksum = FRAMEWORK_SIMPLE_CHECKSUM(frame_buffer + 1, FRAME_DATA_SIZE);
