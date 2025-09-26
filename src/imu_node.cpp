@@ -185,16 +185,16 @@ private:
 
         imu_msg.linear_acceleration.x = data.accelx;
         imu_msg.linear_acceleration.y = data.accely;
-        imu_msg.linear_acceleration.z = data.accelz;
+        imu_msg.linear_acceleration.z = data.accelz;    
 
         imu_msg.angular_velocity.x = data.gyrox;
         imu_msg.angular_velocity.y = data.gyroy;
         imu_msg.angular_velocity.z = data.gyroz;
 
-        imu_msg.orientation.x = 0.0;
-        imu_msg.orientation.y = 0.0;
-        imu_msg.orientation.z = 0.0;
-        imu_msg.orientation.w = 1.0;
+        imu_msg.orientation.x = data.magx;
+        imu_msg.orientation.y = data.magy;
+        imu_msg.orientation.z = data.magz;
+//        imu_msg.orientation.w = 1.0;
 
         imupublisher_ = this->create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
         imupublisher_->publish(imu_msg);
