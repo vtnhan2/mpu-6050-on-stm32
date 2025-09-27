@@ -7,7 +7,7 @@ A comprehensive system for reading GY87-MPU6050 sensor data using STM32F103C8T6 
 The **GY-87 10DOF (10 Degrees of Freedom)** module is an integrated multi-sensor breakout board that combines four essential sensors:
 
 - **MPU6050**: 6-axis IMU (3-axis accelerometer + 3-axis gyroscope)
-- **HMC5883L **: 3-axis digital compass/magnetometer
+- **HMC5883L**: 3-axis digital compass/magnetometer
 - **BMP180**: Barometric pressure sensor with temperature compensation
 - **Integrated Design**: All sensors communicate via I2C on a single compact PCB
 
